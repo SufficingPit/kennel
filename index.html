@@ -410,7 +410,8 @@ function seed(){
 }
 
 let S;   // all data; loaded just before the first render, once every helper exists
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} };
+const saveLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} };
+const save = () => { saveLocal(); trackChanges(); };
 
 // U = what's on screen. sh = the open sheet, pk = a picker opened on top of it.
 const U = {open:new Set(), tab:'cal', wk:weekStart(today()), day:null, q:'', sh:null, pk:null};
@@ -989,14 +990,17 @@ function settingsView(){
       h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this. Changing it doesn’t change pets already added.'),
       planEditor(S.tpl),
 
+      syncSection(),
+
       h('div',{class:'sec'},'Backup'),
       h('div',{class:'row start wrap'},
         btn('Export backup', exportData, 'b2 sm'),
         h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, 'Import backup',
           h('input',{type:'file', accept:'application/json,.json', style:'display:none', onchange:importData}))),
 
-      h('div',{class:'sec'},'Demo'),
-      btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm'))];
+      // sample data is for trying the app out; once signed in, the real book is online
+      !Y.session && [h('div',{class:'sec'},'Demo'),
+        btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm')])];
 }
 function exportData(){
   const blob = new Blob([JSON.stringify(S,null,1)], {type:'application/json'});
@@ -1424,6 +1428,217 @@ function kennelRemoveSheet(){
   ], null);
 }
 
+/* ============================== SYNC ============================== */
+// Local-first: this phone is the main copy and works offline. Once signed in, every
+// change goes to Supabase as one small record, and changes from other phones come back.
+// Safety: a phone that just signed in only downloads before it sends anything; the
+// server never erases (rows are only marked deleted); a burst of deletions waits for a yes.
+const SUPA = {url:'', key:''};   // Project URL and anon (publishable) key. Never the service_role key.
+const SKEY = KEY + '-sync';
+const MASS_DELETE = 5;           // more stays than this deleted in one go (or 2+ families) are held for a yes
+const syncOn = () => !!(SUPA.url && SUPA.key);
+const freshSync = () => ({session:null, base:{}, pending:{}, held:null, cursor:null, ready:false});
+let Y = freshSync();   // session, last synced copy of each record (base), changes waiting (pending)
+try { Y = {...Y, ...JSON.parse(localStorage.getItem(SKEY))}; } catch(e) {}
+const saveSync = () => { try { localStorage.setItem(SKEY, JSON.stringify(Y)); } catch(e) {} };
+const SY = {busy:false, err:'', at:0};   // status for Settings; not saved
+const synced = () => syncOn() && Y.session && Y.ready;
+
+// All data as records keyed "kind:id"
+function records(d){
+  const r = {};
+  d.clients.forEach(c => r['client:'+c.id] = c);
+  d.stays.forEach(s => r['stay:'+s.id] = s);
+  for(const k in d.log) r['log:'+k] = d.log[k];
+  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam};
+  return r;
+}
+function applyRecord(k, data){
+  const i = k.indexOf(':'), kind = k.slice(0,i), id = k.slice(i+1);
+  if(kind==='client' || kind==='stay'){
+    const arr = kind==='client' ? S.clients : S.stays, at = arr.findIndex(x => x.id===id);
+    if(data==null){ if(at>=0) arr.splice(at,1); return; }
+    if(kind==='client') fillClient(data);
+    at>=0 ? arr.splice(at,1,data) : arr.push(data);
+  } else if(kind==='log'){ if(data==null) delete S.log[id]; else S.log[id] = data; }
+  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; }
+}
+
+// After every save: queue what changed since the last synced copy
+function trackChanges(){
+  if(!synced()) return;
+  const at = new Date().toISOString(), cur = records(S), gone = [];
+  for(const k in cur){ const j = JSON.stringify(cur[k]); if(Y.base[k] !== j){ Y.pending[k] = {data:JSON.parse(j), at}; Y.base[k] = j; } }
+  for(const k in Y.base) if(!(k in cur)) gone.push(k);
+  // deleting one family takes its stays with it; that's expected, so only odd bursts are held
+  const famPets = new Set(gone.filter(k => k.startsWith('client:')).flatMap(k => JSON.parse(Y.base[k]).pets.map(p => p.id)));
+  const famsGone = gone.filter(k => k.startsWith('client:')).length;
+  const staysGone = gone.filter(k => k.startsWith('stay:') && !JSON.parse(Y.base[k]).pets.every(id => famPets.has(id))).length;
+  if(famsGone > 1 || staysGone > MASS_DELETE){
+    Y.held ||= {};
+    gone.forEach(k => Y.held[k] = {j:Y.base[k], at});
+  } else gone.forEach(k => Y.pending[k] = {deleted:true, at});
+  gone.forEach(k => delete Y.base[k]);
+  saveSync(); scheduleSync();
+}
+function heldCount(){ return Y.held ? Object.keys(Y.held).filter(k => !k.startsWith('log:')).length : 0; }
+function releaseHeld(){
+  const at = new Date().toISOString();
+  for(const k in Y.held) Y.pending[k] = {deleted:true, at};
+  Y.held = null; saveSync(); render(); syncNow();
+}
+function restoreHeld(){
+  for(const k in Y.held){ applyRecord(k, JSON.parse(Y.held[k].j)); Y.base[k] = Y.held[k].j; }
+  Y.held = null; saveLocal(); saveSync(); render();
+}
+
+async function authCall(grant, body){
+  const r = await fetch(SUPA.url+'/auth/v1/token?grant_type='+grant, {method:'POST', headers:{apikey:SUPA.key, 'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw Object.assign(new Error(r.status===400 ? 'Wrong email or password.' : (j.msg || j.error_description || 'Couldn’t reach the server.')), {status:r.status});
+  return {access_token:j.access_token, refresh_token:j.refresh_token, expires_at:Date.now() + j.expires_in*1000, user:j.user.id, email:j.user.email};
+}
+let refreshing = null;
+function freshToken(){
+  if(Y.session.expires_at - 60e3 > Date.now()) return;
+  return refreshing ||= authCall('refresh_token', {refresh_token:Y.session.refresh_token})
+    .then(s => { Y.session = s; saveSync(); })
+    .catch(e => { if(e.status >= 400 && e.status < 500){ Y.session.dead = true; saveSync(); } throw e; })
+    .finally(() => { refreshing = null; });
+}
+async function api(path, opts={}, retried){
+  await freshToken();
+  const r = await fetch(SUPA.url+path, {...opts, headers:{apikey:SUPA.key, Authorization:'Bearer '+Y.session.access_token, 'Content-Type':'application/json', ...opts.headers}});
+  if(r.status===401 && !retried){ Y.session.expires_at = 0; return api(path, opts, true); }   // renew the sign-in once and retry
+  if(!r.ok) throw new Error('Server said '+r.status);
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
+}
+// Pages of rows changed since `since` (all rows when null), oldest first
+async function fetchRows(since){
+  const out = [];
+  for(;;){
+    const rows = await api('/rest/v1/records?select=kind,id,data,deleted,updated_at,synced_at&order=synced_at.asc&limit=1000'
+      + (since ? '&synced_at=gt.'+encodeURIComponent(since) : ''));
+    out.push(...rows);
+    if(rows.length < 1000) return out;
+    since = rows[rows.length-1].synced_at;
+  }
+}
+async function push(){
+  const keys = Object.keys(Y.pending);
+  for(let i = 0; i < keys.length; i += 200){
+    const sent = keys.slice(i, i+200).map(k => [k, Y.pending[k]]);
+    await api('/rest/v1/records', {method:'POST', headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(sent.map(([k,p]) => { const j = k.indexOf(':');
+        return {user_id:Y.session.user, kind:k.slice(0,j), id:k.slice(j+1), data:p.deleted ? null : p.data, deleted:!!p.deleted, updated_at:p.at}; }))});
+    sent.forEach(([k,p]) => { if(Y.pending[k]===p) delete Y.pending[k]; });
+    saveSync();
+  }
+}
+async function pull(){
+  // look back a few seconds so a row saved just before the last pull isn't missed
+  const rows = await fetchRows(Y.cursor && new Date(Date.parse(Y.cursor) - 5000).toISOString());
+  let changed = false;
+  for(const r of rows){
+    const k = r.kind+':'+r.id, mine = Y.pending[k], j = r.deleted ? undefined : JSON.stringify(r.data);
+    if(!Y.cursor || Date.parse(r.synced_at) > Date.parse(Y.cursor)) Y.cursor = r.synced_at;
+    const ours = mine || Y.held?.[k];   // a change here that hasn't gone up (held deletions too)
+    if(ours && Date.parse(ours.at) >= Date.parse(r.updated_at)) continue;   // ours is newer; keep it
+    delete Y.pending[k];
+    if(Y.held) delete Y.held[k];   // changed elsewhere since it was deleted here, so that change wins
+    if(Y.base[k] === j) continue;   // already have it (often our own change coming back)
+    applyRecord(k, r.deleted ? null : r.data);
+    const now = records(S)[k];
+    if(now) Y.base[k] = JSON.stringify(now); else delete Y.base[k];
+    changed = true;
+  }
+  if(Y.held && !Object.keys(Y.held).length) Y.held = null;
+  saveSync();
+  if(changed){ saveLocal(); quietRender(); }
+}
+let syncTimer = null, syncing = null;
+const scheduleSync = (ms = 1500) => { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, ms); };
+function syncNow(){
+  if(!synced() || Y.session.dead) return Promise.resolve();
+  return syncing ||= (async () => {
+    SY.busy = true;
+    try { await push(); await pull(); SY.err = ''; SY.at = Date.now(); }
+    catch(e){ SY.err = navigator.onLine ? (e.message || 'Couldn’t reach the server.') : 'offline'; }
+    finally { SY.busy = false; syncing = null; if(U.tab==='settings') quietRender(); }
+  })();
+}
+// redraw unless someone is typing (a redraw would close the keyboard)
+function quietRender(){ const a = document.activeElement; if(!(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) render(); }
+
+// Signing in on a phone: download first. Returns 'ok', or 'empty' when nothing is online yet.
+async function signIn(email, password){
+  const s = await authCall('password', {email:email.trim(), password});
+  if(Y.session && Y.session.user===s.user && Y.ready){ Y.session = s; saveSync(); syncNow(); return 'ok'; }
+  Y = {...freshSync(), session:s}; saveSync();
+  const rows = await fetchRows(null);
+  if(!rows.some(r => !r.deleted)) return 'empty';
+  S = blankData();
+  rows.forEach(r => { if(!r.deleted) applyRecord(r.kind+':'+r.id, r.data); if(!Y.cursor || r.synced_at > Y.cursor) Y.cursor = r.synced_at; });
+  const cur = records(S);
+  for(const k in cur) Y.base[k] = JSON.stringify(cur[k]);
+  Y.ready = true; saveLocal(); saveSync(); U.wk = weekStart(today()); U.day = null;
+  return 'ok';
+}
+// First phone ever: start with an empty book, or send up what this phone has
+function startSync(upload){
+  if(!upload) S = blankData();
+  Y.base = {}; Y.pending = {}; Y.ready = true;
+  save(); render();
+}
+function signOut(){ Y = freshSync(); saveSync(); render(); }
+function blankData(){ const d = seed(); d.clients = []; d.stays = []; d.log = {}; return d; }
+
+if(syncOn()){
+  setInterval(() => { if(document.visibilityState==='visible') syncNow(); }, 30000);
+  addEventListener('online', () => syncNow());
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') syncNow(); });
+}
+
+function syncSection(){
+  if(!syncOn()) return null;
+  const u = U.signin ||= {email:Y.session?.email || '', pw:'', err:'', busy:false};
+  const go = async () => {
+    if(!u.email.trim() || !u.pw){ u.err = 'Enter the email and password.'; render(); return; }
+    u.busy = true; u.err = ''; render();
+    try { const r = await signIn(u.email, u.pw); u.pw = ''; u.empty = r==='empty'; if(r==='ok') syncNow(); }
+    catch(e){ u.err = e.message; }
+    u.busy = false; render();
+  };
+  const form = (note) => [note && h('p',{class:'mut', style:'margin-top:0'}, note),
+    field('Email', h('input',{type:'email', value:u.email, autocomplete:'username', oninput:e=>{ u.email = e.target.value; }})),
+    field('Password', h('input',{type:'password', value:u.pw, autocomplete:'current-password', oninput:e=>{ u.pw = e.target.value; }, onkeydown:e=>{ if(e.key==='Enter') go(); }})),
+    h('div',{class:'row start wrap'}, u.err && h('div',{class:'err'}, u.err), btn(u.busy ? 'Signing in…' : 'Sign in', go, 'b', {disabled:u.busy}))];
+  let body;
+  if(!Y.session) body = form('Signing in replaces what’s on this phone with the saved copy.');
+  else if(Y.session.dead) body = form('Signed out. Sign in again to keep saving online.');
+  else if(!Y.ready) body = [h('p',{class:'mut', style:'margin-top:0'}, 'Nothing is saved online yet.'),
+    h('div',{class:'row start wrap'}, btn('Start empty', ()=>confirmSheet('Start empty?', 'This clears the sample data on this phone so you can add real families.', 'Start empty', ()=>startSync(false)), 'b sm'),
+      btn('Upload this phone’s data', ()=>confirmSheet('Upload this phone’s data?', 'Everything on this phone becomes the saved copy, including any sample families.', 'Upload', ()=>startSync(true)), 'b2 sm'))];
+  else {
+    const waiting = Object.keys(Y.pending).length;
+    const status = SY.busy ? 'Saving…' : SY.err==='offline' ? 'Offline. Changes save online when you’re back.'
+      : SY.err ? 'Couldn’t save online. Will keep trying.' : waiting ? plural(waiting,'change')+' waiting'
+      : SY.at ? 'Saved online' : 'Signed in';
+    body = [h('div',{class:'card'}, h('b',{}, Y.session.email), h('div',{class:'mut'}, status)),
+      h('div',{class:'row start wrap', style:'margin-top:8px'}, btn('Sync now', ()=>{ syncNow(); render(); }, 'b2 sm'),
+        btn('Sign out', ()=>confirmSheet('Sign out?', waiting ? plural(waiting,'change')+' on this phone haven’t been saved online yet. Signing out keeps them here but stops saving.' : 'Data stays on this phone but stops saving online.', 'Sign out', signOut), 'lk'))];
+  }
+  return [h('div',{class:'sec'},'Online copy'), body];
+}
+// Shown on every tab while a big deletion is waiting for a yes
+function heldBanner(){
+  const n = heldCount();
+  return n ? h('div',{class:'warn', style:'margin:10px 16px 0'},
+    h('div',{}, plural(n,'item')+(n===1?' was':' were')+' deleted on this phone. Delete '+(n===1?'it':'them')+' from the online copy too?'),
+    h('div',{class:'row start', style:'margin-top:8px'}, btn('Bring them back', restoreHeld, 'b2 sm'), btn('Delete', releaseHeld, 'b sm bd'))) : null;
+}
+
 const SHEETS = {kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor};
 
@@ -1464,7 +1679,7 @@ function render(){
   const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
   if(U.sh && !sh) U.sh = null;
   const pk = U.pk && (U.pk.kind==='time' ? timePickerView(U.pk) : U.pk.kind==='color' ? colorPickerView(U.pk) : U.pk.kind==='date' ? datePickerView(U.pk) : listPickerView(U.pk));
-  app.replaceChildren(...[view, fab, tabs, sh, pk].flat(Infinity).filter(x=>x && x.nodeType));
+  app.replaceChildren(...[heldBanner(), view, fab, tabs, sh, pk].flat(Infinity).filter(x=>x && x.nodeType));
   document.body.style.overflow = (sh||pk) ? 'hidden' : '';
 
   const newSh = app.querySelector('.ov:not(.pk) .sh');
