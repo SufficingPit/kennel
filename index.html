@@ -55,6 +55,14 @@ button.card{width:100%;border:0;text-align:left}
 .pgrid img{width:100%;height:100%;object-fit:cover;display:block}
 .pgrid .pck{position:absolute;top:5px;right:5px;width:24px;height:24px;border-radius:12px;background:var(--pri);color:var(--onp);display:grid;place-items:center}
 .pgrid .pcap{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 5px;color:#fff;font-size:11px;font-weight:600;line-height:1.2;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.65));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bill{padding:4px 14px}
+.bl-row{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;padding:6px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;color:var(--ink);font:inherit}
+.bl-row small{display:block;color:var(--mut);font-size:12px}
+.bl-row b{font-variant-numeric:tabular-nums}
+.bl-row.waived>span:first-child,.bl-row.waived b{opacity:.55}
+.bl-row.waived b{text-decoration:line-through}
+.bl-total{border-bottom:0;font-size:17px}
+.bl-total b{font-size:18px}
 .docimg{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#fff;margin:4px 0 12px}
 .row.start{justify-content:flex-start}
 .wrap{flex-wrap:wrap}
@@ -389,7 +397,10 @@ function migrate(d){
     // personality is one pick, and "Everyone" stands alone
     d.clients.forEach(c => c.pets.forEach(p => { p.personality = p.personality.slice(0,1); if(p.along.includes('Everyone')) p.along = ['Everyone']; }));
     d.book ??= defaultBook(d.kennels);
+    d.rates ??= defaultRates();
     if(d.book.eveFee==null){ d.book.eveFee = 5; d.book.eveFrom ||= '16:00'; }
+    // requests now wait for an answer unless auto-decline is turned on (replaces the old fixed hold)
+    if('hold' in d.book){ delete d.book.hold; d.book.auto ??= 0; d.book.autoMsg ??= ''; }
     return d; }
   return null;
 }
@@ -483,7 +494,7 @@ function seed(){
     stay('k3',  3,'09:00', 6,'16:00','booked',[coco]),
     stay('k8',  5,'09:00', 8,'16:00','booked',[murphy])];
 
-  const data = {v:4, seeded:today(), kennels, tpl, book:defaultBook(kennels),
+  const data = {v:4, seeded:today(), kennels, tpl, book:defaultBook(kennels), rates:defaultRates(),
     tags:[
       {id:'feed',name:'Feed',color:'#16A34A'},
       {id:'potty',name:'Potty',color:'#0EA5E9'},
@@ -1067,7 +1078,7 @@ function dayView(){
     h('div',{class:'pad'},
       arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
       pickups.length>0 && [h('div',{class:'sec'},'Going home'), pickups.map(s=>stayLine(s,'out'))],
-      notes.length>0 && [h('div',{class:'sec'},'All stay'), notes.map(({s,p,c,t}) => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
+      notes.length>0 && [h('div',{class:'sec'},'As needed'), notes.map(({s,p,c,t}) => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
         h('b',{}, tag(t.tag).name), h('div',{}, p.name+' ('+c.name+') · '+kennel(kennelAt(s, D)).name), t.note && h('div',{class:'mut'}, t.note)))],
       h('div',{class:'sec'}, h('span',{}, 'Care to do', lateN>0 && h('span',{class:'pill bad'}, lateN+' overdue'))),
       todo.length ? timeGroups(todo)
@@ -1126,6 +1137,8 @@ function settingsView(){
       h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this.'),
       planReadOnly(S.tpl),
       btn('Edit starting care', ()=>open({t:'tpl', draft:copyPlan(S.tpl)}), 'b2 sm'),
+
+      ratesSection(),
 
       bookingSection(),
 
@@ -1329,6 +1342,8 @@ function stayDetail(u){
       petFacts(p), planReadOnly(p.plan)]),
     h('div',{class:'sec'},'Extra care for this stay only'),
     planEditor(s.extra, pets, true),
+    h('div',{class:'sec'},'Bill'),
+    billCard(s, true),
     h('div',{style:'margin:24px 0 8px'}, btn('Delete stay', ()=>confirmSheet('Delete this stay?', petNames(s)+' in '+kennel(s.kennel).name+', '+md(s.start)+' – '+md(s.end)+'. Its check-offs are removed too.', 'Delete', ()=>{
       S.stays = S.stays.filter(x=>x!==s); for(const k in S.log) if(k.startsWith(s.id+'|')) delete S.log[k];
     }, u), 'lk bad'))
@@ -1341,7 +1356,10 @@ function checkoutSheet(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
   const finish = paid => { s.status='out'; if(paid) s.paid=true; U.sh=null; commit(); };
   const back = () => open({t:'stay', id:s.id});
-  return sheet('Check out '+petNames(s), h('p',{}, s.paid ? 'This stay is already marked paid.' : 'Has this stay been paid?'),
+  const R0 = S.rates || defaultRates();
+  return sheet('Check out '+petNames(s), [billCard(s, false),
+    R0.card ? h('div',{style:'margin:10px 0'}, chip((s.card ? '✓ ' : '')+'Paying by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); })) : null,
+    h('p',{}, s.paid ? 'This stay is already marked paid.' : 'Has this stay been paid?')],
     s.paid ? [btn('Cancel', back, 'b2'), btn('Check out', ()=>finish(true))]
            : [btn('Not yet', ()=>finish(false), 'b2'), btn('Paid', ()=>finish(true))], back);
 }
@@ -1827,6 +1845,94 @@ async function addSitePhotos(W, files){
   quietRender();
 }
 
+/* ---------- money: rates in Settings, a bill on each stay ----------
+   The bill adds itself up from the rates (per pet per night, the sharing discount, the
+   evening and outside-hours fees from Online booking); any automatic line can be waived.
+   Extra charges and discounts are added by hand (s.charges: {id, label, amt, qty}, amt < 0
+   for a discount). Paying by card adds the card fee. */
+const defaultRates = () => ({dog:25, cat:15, other:10, share:2, meds:2, card:2.6});
+const money = n => { const a = Math.abs(Math.round(n*100)/100); return (n < 0 ? '−' : '')+'$'+(a % 1 ? a.toFixed(2) : a); };
+function billFor(s){
+  const R0 = S.rates || defaultRates(), B = S.book, waived = new Set(s.waive||[]), lines = [];
+  const nights = Math.max(1, daysBetween(s.start, s.end));
+  const pets = s.pets.map(id => findPet(id)?.p).filter(Boolean);
+  pets.forEach(p => { const sp = p.species==='cat' ? 'cat' : p.species==='other' ? 'other' : 'dog';
+    lines.push({key:'pet:'+p.id, label:p.name, sub:plural(nights,'night')+' × '+money(R0[sp]), amt:nights*R0[sp]}); });
+  if(pets.length > 1 && R0.share) lines.push({key:'share', label:'Sharing a kennel', sub:pets.length+' pets × '+plural(nights,'night')+' × '+money(-R0.share), amt:-pets.length*nights*R0.share});
+  if(B.fee && offHours(s.start, s.arr)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(s.arr), amt:B.fee});
+  if(B.fee && offHours(s.end, s.pick)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(s.pick), amt:B.fee});
+  else if(B.eveFee && s.pick >= (B.eveFrom || '16:00')) lines.push({key:'eve', label:'Evening pickup', sub:t12(s.pick), amt:B.eveFee});
+  lines.forEach(l => { l.auto = true; l.waived = waived.has(l.key); });
+  (s.charges||[]).forEach(c => lines.push({id:c.id, label:c.label || (c.amt < 0 ? 'Discount' : 'Extra charge'), sub:c.qty > 1 ? c.qty+' × '+money(c.amt) : '', amt:c.amt*(c.qty||1)}));
+  const sub = lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0);
+  if(s.card && R0.card) lines.push({key:'card', label:'Card fee', sub:R0.card+'%', amt:Math.round(sub*R0.card)/100});
+  return {lines, total:lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0)};
+}
+// the bill as shown on a stay (and at checkout, without the buttons)
+function billCard(s, editable){
+  const b = billFor(s), R0 = S.rates || defaultRates();
+  const toggle = key => { const w = new Set(s.waive||[]); w.has(key) ? w.delete(key) : w.add(key); s.waive = [...w]; if(!s.waive.length) delete s.waive; commit(); };
+  return [h('div',{class:'card bill'},
+      b.lines.map(l => h(editable && (l.id || (l.auto && l.key!=='card' && !l.key.startsWith('pet:'))) ? 'button' : 'div', {class:'bl-row'+(l.waived ? ' waived' : ''),
+          onclick: !editable ? null : l.id ? ()=>open({t:'charge', stay:s.id, id:l.id}) : l.auto && l.key!=='card' && !l.key.startsWith('pet:') ? ()=>toggle(l.key) : null,
+          'aria-label': editable && l.auto && l.key!=='card' && !l.key.startsWith('pet:') ? (l.waived ? 'Charge ' : 'Waive ')+l.label : null},
+        h('span',{class:'grow'}, l.label, l.sub && h('small',{}, l.sub), l.waived && h('small',{}, editable ? 'waived, tap to charge' : 'waived')),
+        h('b',{}, money(l.amt)))),
+      h('div',{class:'bl-row bl-total'}, h('span',{class:'grow'}, 'Total'), h('b',{}, money(b.total)))),
+    editable && h('div',{class:'row start wrap', style:'margin-top:8px'},
+      btn('+ Charge', ()=>open({t:'charge', stay:s.id, kind:'charge'}), 'chip add'),
+      btn('+ Discount', ()=>open({t:'charge', stay:s.id, kind:'discount'}), 'chip add'),
+      R0.meds ? btn('+ Meds '+money(R0.meds), ()=>{ const m = (s.charges ||= []).find(c => c.label==='Medications given' && c.amt===R0.meds); if(m) m.qty = (m.qty||1) + 1; else s.charges.push({id:uid('c'), label:'Medications given', amt:R0.meds, qty:1}); commit(); }, 'chip add') : null,
+      R0.card ? chip((s.card ? '✓ ' : '')+'Paid by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); }) : null),
+    editable && h('p',{class:'mut', style:'margin:6px 0 0;font-size:13px'}, 'Tap a fee to waive it. Tap a charge or discount to change it.')];
+}
+
+// add or change one extra charge or discount on a stay
+function chargeSheet(u){
+  const s = S.stays.find(x => x.id===u.stay); if(!s) return null;
+  const orig = u.id && (s.charges||[]).find(c => c.id===u.id);
+  const f = u.f ||= orig ? {label:orig.label, amt:String(Math.abs(orig.amt)), qty:orig.qty||1, kind:orig.amt < 0 ? 'discount' : 'charge'}
+                         : {label:'', amt:'', qty:1, kind:u.kind || 'charge'};
+  const back = () => open({t:'stay', id:s.id});
+  const saveIt = () => {
+    const n = Math.round(parseFloat(String(f.amt).replace(/[$,\s]/g,''))*100)/100;
+    if(!(n > 0)){ u.err = 'Enter an amount.'; render(); return; }
+    const c = {id:orig ? orig.id : uid('c'), label:f.label.trim(), amt:f.kind==='discount' ? -n : n, qty:f.qty};
+    s.charges = (s.charges||[]).filter(x => x!==orig).concat(c);
+    back(); commit();
+  };
+  const disc = f.kind==='discount';
+  return sheet(orig ? (disc ? 'Discount' : 'Extra charge') : disc ? 'Add a discount' : 'Add a charge', [
+    field('Type', seg([['charge','Charge'],['discount','Discount']], f.kind, v=>{ f.kind = v; render(); })),
+    field('What for', h('input',{value:f.label, autocomplete:'off', placeholder:disc ? 'e.g. Returning customer' : 'e.g. Bath, extra walk', oninput:e=>{ f.label = e.target.value; }})),
+    h('div',{class:'row', style:'align-items:flex-start'},
+      field('Amount', h('div',{class:'row start', style:'gap:6px'}, h('b',{}, disc ? '−$' : '$'),
+        h('input',{value:f.amt, inputmode:'decimal', autocomplete:'off', placeholder:'0', style:'width:110px', oninput:e=>{ f.amt = e.target.value; u.err = ''; }}))),
+      field('How many', stepper(f.qty, 1, 60, 1, v=>{ f.qty = v; render(); }, v=>String(v)))),
+    orig && h('div',{style:'margin:16px 0 8px'}, btn('Remove', ()=>{ s.charges = s.charges.filter(x => x!==orig); if(!s.charges.length) delete s.charges; back(); commit(); }, 'lk bad'))
+  ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back, 'b2'), btn(orig ? 'Save' : 'Add', saveIt)], back);
+}
+
+// Settings: what things cost
+function ratesSection(){
+  const R0 = S.rates ||= defaultRates(), b = S.book;
+  const num = (o, k, a={}) => h('div',{class:'row start', style:'gap:6px'}, h('b',{}, a.pre ?? '$'),
+    inp(o[k] ?? 0, v=>{ const n = Math.max(0, Math.round(parseFloat(String(v).replace(/[$,%\s]/g,''))*100)/100 || 0); o[k] = n; commit(); }, {inputmode:'decimal', style:'width:90px', 'aria-label':a.label}),
+    a.post && h('span',{class:'mut'}, a.post));
+  return [h('div',{class:'sec'},'Rates'),
+    h('p',{class:'mut', style:'margin-top:0'},'Used to add up each stay’s bill. The website’s price list is edited separately, under Website.'),
+    group('r-night','Per night', 'Dogs '+money(R0.dog)+' · Cats '+money(R0.cat)+' · Other '+money(R0.other), [
+      field('Dog', num(R0,'dog',{label:'Dog per night'})), field('Cat', num(R0,'cat',{label:'Cat per night'})), field('Other pets', num(R0,'other',{label:'Other pets per night'})),
+      field('Pets sharing a kennel get off, each, per night', num(R0,'share',{label:'Sharing discount'}))]),
+    group('r-fees','Fees', [b.eveFee && 'Evening pickup '+money(b.eveFee), b.fee && 'Other times '+money(b.fee), R0.meds && 'Meds '+money(R0.meds), R0.card && 'Card '+R0.card+'%'].filter(Boolean).join(' · ') || 'None', [
+      field('Drop-off or pickup outside your hours', num(b,'fee',{label:'Outside hours fee'})),
+      field('Evening pickup', h('div',{class:'row start wrap'}, num(b,'eveFee',{label:'Evening pickup fee'}), h('span',{class:'mut'},'at or after'),
+        h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
+      field('Medications (the + Meds button on a stay)', num(R0,'meds',{label:'Meds charge'})),
+      field('Card payments', num(R0,'card',{pre:'', post:'% added', label:'Card fee percent'})),
+      h('p',{class:'mut', style:'margin:0'},'Set any of these to 0 for none. Your drop-off and pickup hours are under Online booking.')])];
+}
+
 /* ---------- online booking rules (Settings) ----------
    Kept in the shared settings record, so the public request page and the database's
    spot counter read the same rules the app shows. */
@@ -1834,7 +1940,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAYS_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function defaultBook(kennels){
   const wk = () => [['08:00','09:30'],['16:00','17:30']];
-  return {on:false, hours:[[['17:00','18:00']], wk(), wk(), wk(), wk(), wk(), wk()], fee:10, eveFee:5, eveFrom:'16:00', minN:1, lead:1, ahead:180, hold:48, closed:[], tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+  return {on:false, hours:[[['17:00','18:00']], wk(), wk(), wk(), wk(), wk(), wk()], fee:10, eveFee:5, eveFrom:'16:00', minN:1, lead:1, ahead:180, auto:0, autoMsg:'', closed:[], tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
     kk:Object.fromEntries(kennels.map(k => [k.id, /^c/i.test(k.name) ? 'cat' : 'dog']))};
 }
 const bookKind = k => S.book.kk[k.id] || (/^c/i.test(k.name) ? 'cat' : 'dog');
@@ -1848,6 +1954,8 @@ const stepper = (v, min, max, step, fn, show) => h('div',{class:'stepr'},
   h('span',{class:'stv'}, show(v)),
   btn('+', ()=>fn(Math.min(max, v+step)), 'chip', {'aria-label':'More', disabled:v>=max}));
 const nightsText = n => n+(n===1 ? ' night' : ' nights');
+const AUTO_MSG = 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.';
+const autoText = h => h < 24 ? h+' hours' : h % 24 ? (h/24)+' days' : plural(h/24, 'day');
 const leadText = n => n===0 ? 'Same day' : n===1 ? '1 day ahead' : n+' days ahead';
 const aheadText = n => Math.round(n/30)+(n<=30 ? ' month' : ' months')+' out';
 const upcomingClosed = () => S.book.closed.filter(c => c.to >= today()).sort((a,b) => a.from < b.from ? -1 : 1);
@@ -1867,19 +1975,15 @@ function bookingSection(){
     group('b-hours','Drop-off and pickup hours', hourLines.map(l => (l.from===l.to ? DAYS[l.from] : DAYS[l.from]+'–'+DAYS[l.to])+' '+l.t).join(' · '), [
       DAYS.map((d, i) => h('button',{class:'card docrow', onclick:()=>open({t:'hours', day:i})},
         h('b',{style:'width:44px;flex:none'}, d), h('span',{class:'grow'}, winText(b.hours[i])), h('span',{class:'mut'},'›'))),
-      field('Fee for other times', h('div',{class:'row start'}, h('b',{},'$'),
-        inp(b.fee, v=>{ b.fee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Fee in dollars'}))),
-      field('Evening pickup fee', h('div',{class:'row start wrap'}, h('b',{},'$'),
-        inp(b.eveFee ?? 0, v=>{ b.eveFee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Evening pickup fee in dollars'}),
-        h('span',{class:'mut'},'for pickups at or after'),
-        h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
-      h('p',{class:'mut', style:'margin:0'},'Set the evening fee to 0 for none. The request page shows both fees next to the times.')]),
+      h('p',{class:'mut', style:'margin:0'},'Fees for evening pickups and other times are under Rates. The request page shows them next to the times.')]),
     group('b-stay','Stay rules', join(nightsText(b.minN)+' minimum', 'book '+(b.lead===0 ? 'same day' : leadText(b.lead)), 'up to '+aheadText(b.ahead)), [
       field('Shortest stay', stepper(b.minN, 1, 30, 1, v=>set('minN', v), nightsText)),
       field('Book at least', stepper(b.lead, 0, 30, 1, v=>set('lead', v), leadText)),
       field('Book up to', stepper(b.ahead, 30, 360, 30, v=>set('ahead', v), aheadText)),
-      field('A request holds its spot for', seg([[24,'1 day'],[48,'2 days'],[72,'3 days']], b.hold, v=>set('hold', v))),
-      h('p',{class:'mut', style:'margin:0'},'Until you answer, a request counts as taken. After this long without an answer, the spot opens again.')]),
+      field('Requests you haven’t answered', seg([['wait','Wait for me'],['auto','Decline after a while']], b.auto ? 'auto' : 'wait', v=>{ b.auto = v==='auto' ? (b.auto || 48) : 0; commit(); })),
+      h('p',{class:'mut', style:'margin:-4px 0 12px'}, b.auto ? 'A request holds its spot until you answer, or until this long has passed. Then it’s declined and the spot opens again.' : 'A request holds its spot until you answer it.'),
+      b.auto ? [field('Decline after', stepper(b.auto, 12, 168, 12, v=>set('auto', v), autoText)),
+        tf(b,'autoMsg','What they see when it’s declined this way',commit,{area:true, ph:AUTO_MSG})] : null]),
     group('b-closed','Closed dates', cl.length ? cl.slice(0,3).map(closedText).join(', ')+(cl.length>3 ? ' and more' : '') : 'None', [
       h('p',{class:'mut', style:'margin-top:0'},'No drop-offs, pickups or stays can be requested over these dates.'),
       cl.map(c => h('button',{class:'card docrow', onclick:()=>open({t:'closed', id:c.id})},
@@ -1938,10 +2042,12 @@ function closedSheet(u){
 // needed); the request is then marked approved. Answers made offline wait in Y.reqq.
 const BIZ = 'Little Village Pet Lodge';
 let R = {list:[], loaded:false, err:''};
-const reqHeld = r => r.status==='pending' && Date.parse(r.created_at) + (S.book.hold||48)*3600e3 > Date.now();
+// a request waits for an answer, unless auto-decline is on and its time is up
+const reqTimedOut = r => r.status==='pending' && S.book.auto > 0 && Date.parse(r.created_at) + S.book.auto*3600e3 <= Date.now();
+const reqHeld = r => r.status==='pending' && !reqTimedOut(r);
 // a booked request the customer cancelled leaves its stays on the calendar until she removes them
 const reqStays = r => (r.stay_id||'').split(',').filter(id => S.stays.some(s => s.id===id));
-const reqWaiting = () => R.list.filter(r => r.status==='pending' || (r.status==='cancelled' && reqStays(r).length));
+const reqWaiting = () => R.list.filter(r => reqHeld(r) || (r.status==='cancelled' && reqStays(r).length));
 const firstName = n => (n||'').trim().split(/\s+/)[0] || '';
 const lastName = n => { const w = (n||'').trim().split(/\s+/); return w.length > 1 ? w[w.length-1] : w[0] || ''; };
 const reqPetsText = r => { const nd = r.pets.filter(p=>p.species==='dog').length, nc = r.pets.length - nd;
@@ -1961,6 +2067,7 @@ async function loadRequests(){
     const list = await api('/rest/v1/requests?select=*&order=created_at.desc&limit=300&created_at=gt.'+encodeURIComponent(since));
     // answers still waiting to go up show as already made
     list.forEach(r => { if(Y.reqq && Y.reqq[r.id]) Object.assign(r, Y.reqq[r.id]); });
+    if(!DEMO) list.filter(reqTimedOut).forEach(r => answerReq(r, {status:'declined', reply:S.book.autoMsg || AUTO_MSG}));
     const before = JSON.stringify(R.list);
     R = {list, loaded:true, err:''};
     if(JSON.stringify(list) !== before) quietRender();
@@ -1994,7 +2101,7 @@ function reqCard(r){
   const n = daysBetween(r.start_date, r.end_date);
   return h('button',{class:'card', onclick:()=>open({t:'req', id:r.id})},
     h('div',{class:'row'}, h('b',{}, r.name), r.status!=='pending' ? h('span',{class:'pill'+(r.status==='approved' ? ' ok' : '')}, r.status==='approved' ? 'Approved' : r.status==='declined' ? 'Declined' : 'Cancelled')
-      : !reqHeld(r) && h('span',{class:'pill bad'},'Not held')),
+      : null),
     h('div',{}, md(r.start_date)+' – '+md(r.end_date)+' · '+plural(n,'night')+' · '+reqPetsText(r)),
     h('div',{class:'mut'}, r.status==='pending' ? 'Sent '+ago(r.created_at) : r.status==='cancelled' ? 'Cancelled by them' : 'Answered '+ago(r.answered_at)));
 }
@@ -2029,7 +2136,6 @@ function reqSheet(u){
     r.status==='cancelled' && reqStays(r).length > 0 && h('div',{class:'warn'}, 'They cancelled after you booked it. The stay is still on the calendar.',
       h('div',{style:'margin-top:8px'}, btn('Remove the stay', ()=>confirmSheet('Remove this stay?', 'Takes '+reqPetsText(r)+' off the calendar for '+md(r.start_date)+' – '+md(r.end_date)+'.', 'Remove', ()=>{
         const ids = reqStays(r); S.stays = S.stays.filter(s => !ids.includes(s.id)); U.sh = {t:'req', id:r.id}; }, {t:'req', id:r.id}), 'b2 sm'))),
-    r.status==='pending' && !reqHeld(r) && h('div',{class:'warn'},'Not answered in time, so its spots are open again. You can still approve it if there’s room.'),
     h('div',{class:'card'},
       line('Drop-off', wmd(r.start_date)+', '+t12(r.arr)+(offHours(r.start_date, r.arr) ? ' (other time'+fee+')' : '')),
       line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : S.book.eveFee && r.pick >= (S.book.eveFrom||'16:00') ? ' (evening pickup, $'+S.book.eveFee+')' : '')),
@@ -2134,7 +2240,7 @@ function records(d){
   d.clients.forEach(c => r['client:'+c.id] = c);
   d.stays.forEach(s => r['stay:'+s.id] = s);
   for(const k in d.log) r['log:'+k] = d.log[k];
-  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam, book:d.book};
+  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam, book:d.book, rates:d.rates};
   if(d.site) r['site:main'] = d.site;   // only once someone has edited the website
   return r;
 }
@@ -2147,7 +2253,7 @@ function applyRecord(k, data){
     at>=0 ? arr.splice(at,1,data) : arr.push(data);
   } else if(kind==='log'){ if(data==null) delete S.log[id]; else S.log[id] = data; }
   else if(kind==='site'){ if(data) S.site = data; else delete S.site; }
-  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; }
+  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; if(data.rates) S.rates = data.rates; }
 }
 
 // After every save: queue what changed since the last synced copy
@@ -2468,7 +2574,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
