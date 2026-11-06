@@ -737,7 +737,9 @@ function calView(){
   // which kennel rows to show: all, ones with a stay in view, or ones with a pet in them right now
   const inView = S.kennels.filter(k => viewStays.some(s=>s.kennel===k.id));
   const hereNow = S.kennels.filter(k => S.stays.some(s=>s.kennel===k.id && s.status==='in'));
-  const kf = S.kf || 'all';
+  // the filter only means something while today is in view; other dates show every kennel
+  const showsToday = w<=td && td<=end;
+  const kf = showsToday ? (S.kf || 'all') : 'all';
   const shown = kf==='week' ? inView : kf==='now' ? hereNow : S.kennels;
   const rows = shown.map(k => {
     const lane = h('div',{class:'lane'},
@@ -809,7 +811,7 @@ function calView(){
         U.range ? h('div',{class:'row', style:'justify-content:center;gap:4px'}, h('span',{class:'mut'}, plural(n,'day')+' ·'), btn('Back to weeks', ()=>{ U.range=null; U.wk=weekStart(td); render(); }, 'lk', {style:'min-height:28px;padding:0 2px'}))
           : isThisWeek ? h('div',{class:'mut'},'This week') : btn('Back to this week', ()=>{U.wk=weekStart(td); render();}, 'lk', {style:'min-height:28px'})),
       btn('›', ()=>{ U.range ? (U.range = {start:addDays(w,step), end:addDays(end,step)}) : (U.wk = addDays(w,7)); render(); }, 'ic', {'aria-label':'Later'})),
-    h('div',{class:'pad', style:'padding-bottom:10px'},
+    showsToday && h('div',{class:'pad', style:'padding-bottom:10px'},
       h('div',{class:'seg kseg', role:'group', 'aria-label':'Which kennels to show'},
         [['all','All',S.kennels.length],['week', U.range ? 'In range' : 'This week', inView.length],['now','Here now',hereNow.length]].map(([v,l,c]) =>
           h('button',{class:kf===v?'on':'', 'aria-pressed':kf===v?'true':'false', onclick:()=>{ S.kf=v; commit(); }}, l, h('span',{class:'n'}, c))))),
