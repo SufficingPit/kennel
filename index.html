@@ -1,0 +1,1432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kennel">
+<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<title>Kennel</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root{--bg:#F7F7F5;--card:#fff;--ink:#1F2937;--mut:#5B6472;--line:#DDDDD6;--row:#EFEFEA;--pri:#0F766E;--pri-soft:#E3F2EF;--onp:#fff;--bad:#B91C1C;--warnbg:#FEF3C7;--warnfg:#78350F;--field:#C9CBC3;--shade:rgba(120,120,120,.16);--shadow:0 1px 2px rgba(0,0,0,.06)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1B2027;--ink:#E5E7EB;--mut:#A3ACB9;--line:#2E353F;--row:#171B21;--pri:#3BAE9F;--pri-soft:#173A36;--onp:#06201C;--bad:#F87171;--warnbg:#3A2E0B;--warnfg:#FCD34D;--field:#3A424D;--shade:rgba(0,0,0,.35);--shadow:none;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1B2027;--ink:#E5E7EB;--mut:#A3ACB9;--line:#2E353F;--row:#171B21;--pri:#3BAE9F;--pri-soft:#173A36;--onp:#06201C;--bad:#F87171;--warnbg:#3A2E0B;--warnfg:#FCD34D;--field:#3A424D;--shade:rgba(0,0,0,.35);--shadow:none;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg)}
+body{margin:0;color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+#app{max-width:560px;margin:0 auto;min-height:100dvh;padding-top:env(safe-area-inset-top,0px);padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+h1{font-size:19px;margin:0;font-weight:700}
+.top{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px}
+.top .mid{text-align:center;flex:1;min-width:0}
+.pad{padding:0 16px}
+.hdr{padding:16px 16px 10px;min-height:64px}
+.hdr h1{font-size:22px}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+.b{min-height:46px;padding:0 20px;border:0;border-radius:12px;background:var(--pri);color:var(--onp);font-weight:600}
+.b2{min-height:46px;padding:0 16px;border:1px solid var(--field);border-radius:12px;background:var(--card);color:var(--ink);font-weight:600}
+.bd{background:#C62828;color:#fff}
+.sm{min-height:38px;padding:0 14px;font-size:14px;border-radius:10px}
+.lk{min-height:40px;border:0;background:none;color:var(--pri);font-weight:600;padding:0 6px}
+.lk.bad{color:var(--bad)}
+.ic{min-width:44px;min-height:44px;border:0;background:none;font-size:24px;line-height:1;color:var(--ink)}
+.card{background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:block;box-shadow:var(--shadow)}
+button.card{width:100%;border:0;text-align:left}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.row.start{justify-content:flex-start}
+.wrap{flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.mut{color:var(--mut);font-size:13px}
+.sec{font-size:12px;font-weight:700;color:var(--mut);letter-spacing:.05em;margin:22px 0 8px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sec .lk{text-transform:none;letter-spacing:0;font-size:14px;min-height:32px}
+/* 16px on fields stops iOS Safari zooming in on focus */
+input,textarea{width:100%;min-width:0;min-height:46px;border:1px solid var(--field);border-radius:10px;padding:0 12px;background:var(--card);font-size:16px}
+input:focus,textarea:focus,.fld:focus-visible{outline:2px solid var(--pri);outline-offset:-1px;border-color:var(--pri)}
+textarea{padding:10px 12px;min-height:72px;resize:vertical}
+input[type=date]{-webkit-appearance:none;appearance:none;height:46px;line-height:44px;text-align:left}
+input[type=search]{-webkit-appearance:none;appearance:none}
+input[type=checkbox]{width:22px;height:22px;min-height:0;accent-color:var(--pri);flex:none;margin:0}
+.f{display:block;margin-bottom:12px}
+.row>.f{flex:1;min-width:0}
+.f>.lbl{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-bottom:5px}
+/* a "field button": looks like an input, opens a picker */
+.fld{width:100%;min-height:46px;border:1px solid var(--field);border-radius:10px;padding:0 12px;background:var(--card);font-size:16px;text-align:left;display:flex;align-items:center;gap:8px}
+.fld .v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fld .ph{color:var(--mut)}
+.fld .chev{color:var(--mut);font-size:13px;flex:none}
+.fld .sub{color:var(--mut);font-size:13px}
+.chk-row{display:flex;align-items:center;gap:10px;min-height:44px}
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--field);background:var(--card);font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.chip.on{background:var(--pri);border-color:var(--pri);color:var(--onp)}
+.chip.add{border-style:dashed;color:var(--pri);border-color:var(--pri)}
+.tchip{padding:0;gap:0;overflow:hidden}
+.tchip>button{border:0;background:none;min-height:36px;padding:0 6px 0 14px;font-weight:600}
+.tchip>.cx{padding:0 12px 0 6px;color:var(--mut);font-size:18px}
+.seg{display:flex;border:1px solid var(--field);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{flex:1;min-height:40px;border:0;background:none;font-weight:600;font-size:14px;color:var(--mut)}
+.seg button+button{border-left:1px solid var(--field)}
+.seg button.on{background:var(--pri);color:var(--onp)}
+/* tab bar */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;max-width:560px;margin:0 auto;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs button{flex:1;min-height:58px;border:0;background:none;font-size:12px;font-weight:600;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.tabs svg{width:22px;height:22px}
+.tabs .on{color:var(--pri)}
+.tabs .newtab{color:var(--pri)}
+.tabs .newtab .plus{width:34px;height:26px;border-radius:13px;background:var(--pri);color:var(--onp);font-size:22px;line-height:25px;font-weight:600;display:block}
+/* while typing, sheet buttons stop floating over the keyboard and just sit at the end */
+body.typing .sh>.ft{position:static;border-top:0}
+/* week grid */
+.wk{position:relative}
+.wh{display:flex;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:4}
+.lab{width:46px;flex:none}
+.wh button{flex:1;min-width:0;border:0;background:none;padding:4px 0;font-size:11px;min-height:46px;color:var(--mut)}
+.wh button b{display:block;font-size:15px;color:var(--ink)}
+.wh button.td b{display:block;margin:0 auto;width:26px;height:26px;line-height:26px;border-radius:13px;background:var(--pri);color:var(--onp)}
+.kr{display:flex;height:44px}
+.kr:nth-child(even){background:var(--row)}
+.kr .lab{font-size:12px;font-weight:600;color:var(--mut);padding-left:10px;display:flex;align-items:center;overflow:hidden;white-space:nowrap}
+.lane{flex:1;position:relative;display:flex;min-width:0}
+.lane>.cell{flex:1;min-width:0;border:0;border-left:1px solid var(--line);background:none;padding:0}
+.bar{position:absolute;top:4px;height:24px;z-index:2;border:0;border-radius:6px;padding:0 6px;color:#fff;font-size:11px;font-weight:600;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:24px}
+.bar.late{outline:2px dashed var(--bad);outline-offset:1px}
+.trk{position:absolute;top:31px;height:8px;border-radius:3px;z-index:2;pointer-events:none}
+.pip{position:absolute;top:31px;height:8px;width:3px;margin-left:-1.5px;box-shadow:0 0 0 1px var(--bg);border-radius:2px;z-index:3;pointer-events:none}
+.pip.done{opacity:.3}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;border:1px solid rgba(255,255,255,.9);margin-left:4px;vertical-align:middle}
+.ovl{position:absolute;top:0;bottom:0;left:46px;right:0;pointer-events:none;z-index:1}
+.lg{display:flex;gap:6px 14px;flex-wrap:wrap;justify-content:center;font-size:12px;color:var(--mut);padding:12px 8px 4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;flex:none}
+/* sheets */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.ov.pk{z-index:30;background:rgba(0,0,0,.35)}
+.sh{background:var(--bg);width:100%;max-width:560px;max-height:92dvh;overflow:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:0 16px;display:flex;flex-direction:column}
+.sh>.hd{position:sticky;top:0;background:var(--bg);z-index:3;padding:14px 0 10px;display:flex;align-items:center;gap:8px}
+.sh>.hd h1{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh>.hd .ic{margin-right:-10px}
+.sh>.sb{flex:1}
+.sh>.ft{flex-wrap:wrap;position:sticky;bottom:0;background:var(--bg);z-index:3;padding:12px 0 calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);margin-top:8px}
+.sh>.ft .b{flex:1}
+.sh>.ft.only-pad{border-top:0;padding-top:0}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--field);margin:8px auto 0;flex:none}
+.st{border-left:6px solid var(--line)}
+.colors{display:flex;gap:10px;flex-wrap:wrap}
+.colors button{width:40px;height:40px;border-radius:50%;border:3px solid transparent;box-shadow:inset 0 0 0 2px var(--bg)}
+.colors .on{border-color:var(--ink)}
+.chk{width:44px;height:44px;border:2px solid var(--field);border-radius:10px;background:var(--card);font-size:22px;color:var(--onp);flex:none}
+.chk.on{background:var(--pri);border-color:var(--pri)}
+.warn{background:var(--warnbg);color:var(--warnfg);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px}
+.err{color:var(--bad);font-size:14px;font-weight:600;flex-basis:100%;order:-1}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--row);color:var(--mut);margin-left:6px;vertical-align:1px;white-space:nowrap}
+.pill.bad{background:var(--bad);color:#fff}
+.pill.ok{background:var(--pri-soft);color:var(--pri)}
+.status{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;color:#fff}
+/* list picker */
+.plist{display:flex;flex-direction:column;gap:6px;padding-bottom:8px}
+.pitem{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 14px;border:1px solid transparent;border-radius:12px;background:var(--card);text-align:left;box-shadow:var(--shadow)}
+.pitem.on{border-color:var(--pri);background:var(--pri-soft)}
+.pitem .t{font-weight:600}
+.pitem .s{color:var(--mut);font-size:13px}
+.pitem.new{border:1px dashed var(--pri);color:var(--pri);background:transparent;box-shadow:none;font-weight:600}
+.pitem .tick-on{color:var(--pri);font-weight:700;font-size:18px;margin-left:auto}
+.sticky-search{position:sticky;top:58px;background:var(--bg);z-index:2;padding-bottom:10px}
+/* time wheels */
+.wheels{position:relative;display:flex;justify-content:center;gap:4px;height:220px;margin:6px 0 4px;user-select:none;-webkit-user-select:none}
+.wheels .band{position:absolute;left:0;right:0;top:90px;height:40px;border-radius:10px;background:var(--row);pointer-events:none}
+.wheels .colon{position:relative;line-height:220px;font-size:22px;font-weight:700}
+.wheel{position:relative;width:76px;height:220px;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);overscroll-behavior:contain}
+.wheel::-webkit-scrollbar{display:none}
+.wheel .sp{height:90px}
+.wheel .wi{height:40px;line-height:40px;text-align:center;font-size:20px;scroll-snap-align:center;color:var(--mut);cursor:pointer}
+.wheel .wi.sel{color:var(--ink);font-weight:700;font-size:23px}
+/* day timeline */
+.tl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:6px;border-top:1px solid var(--line)}
+.tl-in{position:relative}
+.tl-r{display:flex;height:48px;border-bottom:1px solid var(--line)}
+.tl-l{width:96px;flex:none;position:sticky;left:0;background:var(--bg);z-index:5;padding:5px 0 0 12px;font-size:12px;border-right:1px solid var(--line)}
+.tl-l .mut{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-t{flex:1;position:relative}
+.tick{position:absolute;top:12px;width:24px;height:24px;margin-left:-12px;border-radius:50%;border:2px solid var(--card);color:#fff;font-size:12px;font-weight:700;padding:0;z-index:4;line-height:20px}
+.tick.late{box-shadow:0 0 0 2px var(--bad)}
+.tick.off{opacity:.4}
+.grp{font-size:13px;font-weight:700;margin:14px 0 6px}
+.task-hint{font-size:13px;color:var(--pri);font-weight:600}
+.empty{padding:20px 4px;text-align:center;color:var(--mut)}
+/* owner report: shown as a "paper" preview, and the only thing printed */
+.paper{background:#fff;color:#1F2937;border-radius:10px;padding:22px 20px;box-shadow:0 1px 4px rgba(0,0,0,.15);font-size:14px;line-height:1.45}
+.paper h2{margin:0;font-size:20px;color:#0F766E}
+.paper h3{margin:18px 0 6px;font-size:15px;border-bottom:1px solid #DDD;padding-bottom:4px}
+.paper .sub{color:#5B6472}
+.paper .day{margin:10px 0 2px;font-weight:700}
+.paper .pl{margin-left:10px}
+.paper .box{display:inline-block;width:12px;height:12px;border:1.5px solid #555;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.paper .msg{white-space:pre-wrap;background:#F3F7F6;border-radius:8px;padding:10px 12px;margin-top:6px}
+#print{display:none}
+@media print{
+  @page{margin:14mm}
+  body{background:#fff}
+  #app{display:none !important}
+  #print{display:block}
+  #print .paper{box-shadow:none;padding:0;border-radius:0;font-size:12pt}
+}
+.grpbox{background:var(--card);border-radius:12px;margin-bottom:8px;box-shadow:var(--shadow)}
+.grph{width:100%;border:0;background:none;text-align:left;display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:56px}
+.grpt{font-weight:700}
+.grps{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grps .ph{font-style:italic}
+.grpc{width:28px;height:28px;border-radius:14px;background:var(--row);color:var(--mut);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex:none}
+.grpb{padding:0 14px 6px}
+.grpb .card{box-shadow:none;background:var(--bg)}
+.kseg button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:38px}
+.kseg .n{font-size:12px;font-weight:700;min-width:22px;height:20px;line-height:20px;padding:0 6px;border-radius:10px;background:var(--row);color:var(--mut)}
+.kseg button.on .n{background:rgba(255,255,255,.25);color:inherit}
+/* checkboxes styled to match the app */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:24px;height:24px;border:2px solid var(--field);border-radius:7px;background:var(--card);display:inline-grid;place-content:center;cursor:pointer}
+input[type=checkbox]::after{content:'';width:12px;height:7px;border:solid var(--onp);border-width:0 0 2.5px 2.5px;transform:rotate(-45deg) translate(1px,-1px);opacity:0}
+input[type=checkbox]:checked{background:var(--pri);border-color:var(--pri)}
+input[type=checkbox]:checked::after{opacity:1}
+input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
+.wkx{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.wh.wide{position:relative}
+.wh.wide button{font-size:10px;padding:4px 0}
+.wh.wide button b{font-size:13px}
+.kr .lab{position:sticky;left:0;z-index:5;background:var(--bg)}
+.kr:nth-child(even) .lab{background:var(--row)}
+.wh .lab{position:sticky;left:0;z-index:5;background:var(--bg)}
+.cell.wkstart{border-left:1.5px solid var(--field)}
+.rangebtn{border:0;background:none;display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:8px;min-height:36px}
+.rangebtn .chev{color:var(--mut);font-size:12px}
+.ldot{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;margin-right:5px;vertical-align:-2px;color:#fff;font-size:9px;font-weight:700;border:1.5px solid var(--card)}
+/* the family tag shrinks first so the pet name stays readable; a tag squeezed to almost nothing is hidden after layout */
+.bar{display:flex;align-items:center}
+.bar .bl{display:flex;align-items:center;flex:1;min-width:0}
+.bar .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.bar .arr{flex:none;margin-left:4px}
+.bar .dot{flex:none}
+.bar .fam{flex:0 6 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-left:5px;padding:0 5px;line-height:16px;border-radius:4px;background:rgba(0,0,0,.24);font-weight:500;font-size:10px;vertical-align:1px}
+.colors .custom{width:40px;height:40px;border-radius:50%;border:2px dashed var(--field);background:var(--card);color:var(--mut);font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center}
+.colors .custom.on{border:3px solid var(--ink);box-shadow:inset 0 0 0 2px var(--bg)}
+.cwheel{display:block;margin:4px auto 12px;width:220px;height:220px;border-radius:50%;touch-action:none;cursor:crosshair}
+.cwrap{position:relative;width:220px;margin:0 auto}
+.cmark{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 1px 4px rgba(0,0,0,.4);pointer-events:none}
+.crange{width:100%;min-height:0;height:28px;border:0;padding:0;background:none;accent-color:var(--pri)}
+.crow{display:flex;gap:8px;align-items:flex-end}
+.crow .f{flex:1;margin:0}
+.cprev{width:46px;height:46px;border-radius:10px;flex:none;border:1px solid var(--field)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="print"></div>
+<script>
+'use strict';
+
+const KEY = 'kennel-proto-v7';   // bumped so the new demo data loads in place of older saves
+const BUSINESS = 'Little Village Pet Lodge';
+const COLORS = ['#16A34A','#0EA5E9','#F59E0B','#A855F7','#EF4444','#EC4899','#14B8A6','#6366F1','#64748B'];
+const STATUS = {booked:'Booked', in:'In kennel', out:'Checked out'};
+const DAY_START = 6*60, DAY_END = 22*60;   // Day timeline runs 6 AM to 10 PM
+
+/* ---------- dates and times: dates are 'YYYY-MM-DD', times 'HH:MM' (24h) ---------- */
+const pad2 = n => String(n).padStart(2,'0');
+const fmt = d => d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+const parseD = s => new Date(s+'T12:00');
+const addDays = (s,n) => { const d = parseD(s); d.setDate(d.getDate()+n); return fmt(d); };
+const today = () => fmt(new Date());
+const nowHM = () => { const n = new Date(); return pad2(n.getHours())+':'+pad2(n.getMinutes()); };
+const weekStart = s => addDays(s, -parseD(s).getDay());          // Sunday
+const daysBetween = (a,b) => Math.round((parseD(b)-parseD(a))/864e5);
+const mins = t => { if(!t) return null; const [a,b] = t.split(':'); return +a*60 + +b; };
+const dayFrac = t => { const m = mins(t); if(m==null) return 1; return Math.max(0, Math.min(1, (m-DAY_START)/(DAY_END-DAY_START))); };
+const calFrac = t => { const m = mins(t); return m==null ? 1 : m/1440; };   // week grid columns are midnight to midnight
+const md = s => parseD(s).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+const wmd = s => parseD(s).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+const longDay = s => parseD(s).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+const t12 = t => { if(!t) return ''; const [a,b] = t.split(':'); return ((+a+11)%12+1)+':'+b+(+a<12?' AM':' PM'); };
+const stamp = (d,t) => d+'T'+(t||'00:00');
+const atTime = (D, hm) => new Date(D+'T'+hm).getTime();
+const hmOf = ms => { const d = new Date(ms); return pad2(d.getHours())+':'+pad2(d.getMinutes()); };
+const plural = (n, w) => n+' '+w+(n===1?'':'s');
+
+let seq = 0;
+const uid = p => (p||'i')+Date.now().toString(36)+(seq++).toString(36)+Math.random().toString(36).slice(2,5);
+
+/* ---------- data ---------- */
+function task(tag, times, note, pet){ return {id:uid('t'), tag, times:times||[], note:note||'', pet:pet||''}; }
+function copyPlan(pl){ return pl.map(t => ({...t, id:uid('t'), times:[...t.times]})); }
+// Fields follow the Little Village Pet Lodge intake form.
+const CLIENT_DEF = {first:'', name:'', email:'', cell:'', phone:'', work:'', city:'', state:'', zip:'',
+  coName:'', coMain:'', coAlt:'', emName:'', emMain:'', emAlt:'', vet:'', vetPhone:'', pickupBy:'', signed:'', notes:''};
+const PET_DEF = {name:'', species:'dog', other:'', breed:'', color:'', dob:'', sex:'', fixed:'',
+  conditions:'', diet:'', food:'', perDay:'', dietNotes:'', treats:'', treatFav:'',
+  personality:[], along:[], jumps:'', bites:'', fights:'', chews:'', likes:'', dislikes:'', notes:'', vaxOk:''};
+const fillClient = c => { for(const k in CLIENT_DEF) if(c[k]==null) c[k] = CLIENT_DEF[k]; c.pets ||= []; c.pets.forEach(fillPet); return c; };
+const fillPet = p => { for(const k in PET_DEF) if(p[k]==null) p[k] = Array.isArray(PET_DEF[k]) ? [] : (typeof PET_DEF[k]==='object' ? {} : PET_DEF[k]); p.plan ||= []; return p; };
+function newPet(name, species){ return fillPet({id:uid('p'), name, species:species||'dog', plan:copyPlan(S.tpl)}); }
+const PERSONALITY = ['Shy at first','Paw-fers privacy','Playful','Cuddlebug','Love at first lick'];
+const ALONG = ['Cats','Dogs','Humans','Everyone'];
+const FLAGS = [['bites','Has bitten'],['fights','Starts fights'],['jumps','Jumps fences'],['chews','Chews beds']];
+const petFlags = p => FLAGS.filter(([k])=>p[k]==='yes').map(([,l])=>l).concat(p.conditions ? ['Medical'] : []);
+const flagPills = p => petFlags(p).map(f => h('span',{class:'pill bad'}, f));
+const bestPhone = c => c.cell || c.phone || c.work || '';
+const allPhones = c => [c.cell, c.phone, c.work].map(x=>(x||'').replace(/\D/g,'')).filter(x=>x.length>6);
+const ageOf = dob => { if(!dob) return ''; const m = (new Date().getFullYear()-+dob.slice(0,4))*12 + (new Date().getMonth()+1-+dob.slice(5,7)); return m<12 ? plural(Math.max(0,m),'month')+' old' : plural(Math.floor(m/12),'year')+' old'; };
+
+function migrate(d){
+  if(d && d.v===2){
+    d.clients.forEach(c => c.pets.forEach(p => { p.species = p.species || 'dog'; delete p.vacc; }));
+    d.v = 3;
+  }
+  if(d && d.v===3){
+    delete d.me;
+    d.clients.forEach(c => { if(typeof c.emerg==='string'){ c.emName = c.emerg; delete c.emerg; } });
+    d.stays.forEach(s => { s.belongings ??= ''; });
+    d.v = 4;
+  }
+  if(d && d.v===4){ if(d.hideEmpty){ d.kf='week'; delete d.hideEmpty; } d.clients.forEach(fillClient); d.stays.forEach(s => { s.report ??= ''; delete s.pickupBy; });
+    // vaccines are now one yes/no per pet (the intake waiver just says they're up to date)
+    delete d.vaccines; d.clients.forEach(c => c.pets.forEach(p => { delete p.vax; }));
+    return d; }
+  return null;
+}
+
+function seed(){
+  const kennels = [...Array(16)].map((_,i)=>({id:'k'+(i+1), name:'D'+(i+1)}))
+    .concat([{id:'k17',name:'C1'},{id:'k18',name:'C2'}]);
+  // everyday routine every pet starts with; the extras below are what makes each one different
+  const tpl = [task('feed',['07:30','17:00']), task('potty',['07:00','12:00','21:00'])];
+  const catPlan = () => [task('feed',['07:30','17:30'])];
+  const pet = (name, info={}, extra=[], plan) => fillPet({id:uid('p'), name, species:'dog', vaxOk:'yes', plan: plan || copyPlan(tpl).concat(extra), ...info});
+  const cat = (name, info={}, extra=[]) => pet(name, {species:'cat', ...info}, [], catPlan().concat(extra));
+
+  const tucker = pet('Tucker', {breed:'Corgi', color:'Red & white', sex:'m', fixed:'yes', food:'Purina Pro Plan, 1 cup', perDay:'2', treats:'yes', treatFav:'peanut butter biscuits', personality:['Playful'], along:['Everyone'], likes:'Tennis balls'});
+  const hazel = pet('Hazel', {breed:'Golden mix', color:'Gold', sex:'f', fixed:'yes', food:'Purina Pro Plan, 1½ cups', perDay:'2', personality:['Cuddlebug'], along:['Dogs','Humans']});
+  const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Playful','Love at first lick']},
+    [task('diet',[],'Grain-free only, owner’s food')]);
+  const gus = pet('Gus', {breed:'Beagle', color:'Tricolor', sex:'m', fixed:'yes', bites:'yes', dislikes:'Being picked up', conditions:'Seasonal allergies', personality:['Shy at first']},
+    [task('meds',['08:00'],'Apoquel 16 mg, 1 tablet with breakfast')]);
+  const willow = pet('Willow', {breed:'Shih Tzu', color:'White & tan', sex:'f', fixed:'yes', dob:addDays(today(),-365*12-40), conditions:'Arthritis, mild hearing loss', food:'Hill’s Senior, ½ cup', perDay:'2', personality:['Cuddlebug','Paw-fers privacy']},
+    [task('meds',['08:00','20:00'],'Rimadyl 25 mg, wrap in cheese'), task('diet',[],'Soften kibble with warm water')]);
+  const roxy = pet('Nala', {breed:'Boxer', color:'Fawn', sex:'f', fixed:'yes', personality:['Playful'], along:['Humans']});
+  const milo = cat('Mochi', {breed:'Domestic shorthair', color:'Orange tabby', sex:'m', fixed:'yes', conditions:'Diabetic', food:'Purina DM, measured', personality:['Paw-fers privacy']},
+    [task('meds',['07:30','17:30'],'Insulin 2 units, right after meals')]);
+  const bear = pet('Rufus', {breed:'Newfoundland', color:'Black', sex:'m', fixed:'yes', personality:['Cuddlebug'], along:['Everyone']});
+  const daisy = pet('Juniper', {breed:'Cocker Spaniel', color:'Buff', sex:'f', fixed:'yes'});
+  const luna = pet('Luna', {breed:'Husky', color:'Grey & white', sex:'f', fixed:'yes', jumps:'yes', personality:['Playful'], along:['Dogs']});
+  const max = pet('Max', {breed:'Husky', color:'Black & white', sex:'m', fixed:'yes', jumps:'yes', personality:['Playful'], along:['Dogs']});
+  const biscuit = pet('Biscuit', {breed:'Dachshund', color:'Red', sex:'m', fixed:'yes', treats:'yes', treatFav:'chicken jerky', personality:['Love at first lick']});
+  const pepper = cat('Pepper', {breed:'Siamese', sex:'f', fixed:'yes', personality:['Shy at first'], vaxOk:''});
+  const duke = pet('Duke', {breed:'German Shepherd', color:'Black & tan', sex:'m', fixed:'no', fights:'yes', along:['Humans'], notes:'Dog-reactive. Walk alone, no shared yard time.'});
+  const coco = pet('Coco', {breed:'Toy Poodle', color:'Apricot', sex:'f', fixed:'yes'});
+  const zeus = pet('Zeus', {breed:'Pit mix', color:'Blue', sex:'m', fixed:'yes', personality:['Cuddlebug'], along:['Everyone']});
+  const ginger = pet('Ginger', {breed:'Golden Retriever', color:'Gold', sex:'f', fixed:'yes'});
+  const murphy = pet('Murphy', {breed:'Bernese', color:'Tricolor', sex:'m', fixed:'yes'});
+
+  const vet = 'Maple Creek Vet Clinic', vetPhone = '555-0100';
+  const cl = (name, first, cell, pets, more={}) => fillClient({id:uid('c'), name, first, cell, pets, vet, vetPhone, signed:addDays(today(),-60), ...more});
+  const clients = [
+    cl('Whitfield','Sarah','555-0101',[tucker,hazel],{emName:'Tom Whitfield', emMain:'555-0102', pickupBy:'Grandma Jean'}),
+    cl('Okafor','Mike','555-0144',[otis,gus]),
+    cl('Lindqvist','Lisa','555-0187',[willow],{emName:'Dana Lindqvist', emMain:'555-0188'}),
+    cl('Brennan','Kyle','555-0120',[roxy]),
+    cl('Castillo','Priya','555-0133',[milo]),
+    cl('Fisher','Joe','555-0176',[bear]),
+    cl('Garcia','Maria','555-0119',[daisy]),
+    cl('Hughes','Ben','555-0165',[luna,max]),
+    cl('Kim','Grace','555-0151',[biscuit]),
+    cl('Nguyen','An','555-0148',[pepper],{signed:''}),
+    cl('Ortiz','Luis','555-0172',[duke]),
+    cl('Patel','Ravi','555-0109',[coco]),
+    cl('Reed','Amy','555-0193',[zeus]),
+    cl('Sullivan','Kate','555-0127',[ginger]),
+    cl('Walker','Chris','555-0161',[murphy])];
+
+  const t0 = today(), d = n => addDays(t0,n);
+  const stay = (k, s, arr, e, pick, status, pets, more={}) =>
+    ({id:uid('s'), kennel:k, start:d(s), arr, end:d(e), pick, status, paid:false, pets:pets.map(p=>p.id), extra:[], notes:'', belongings:'', report:'', ...more});
+  const stays = [
+    stay('k10',-2,'09:00', 1,'16:00','in',[tucker,hazel], {belongings:'Bed, blue leash, chew toy'}),
+    stay('k14',-4,'10:00', 0,'11:00','out',[bear], {paid:true, report:'Rufus was a gentle giant all week and loved his afternoon naps in the shade.'}),
+    stay('k14', 0,'14:00', 2,'16:00','in',[otis], {belongings:'Bag of his food, Kong'}),
+    stay('k16', 0,'09:00', 2,'16:00','booked',[gus]),
+    stay('k8', -3,'08:30', 3,'17:00','in',[willow], {notes:'Owner traveling. Call Dana with any issues.', belongings:'Orthopedic bed, meds'}),
+    stay('k17',-1,'09:00', 2,'16:00','in',[milo], {belongings:'Insulin pen (in fridge), DM food'}),
+    stay('k2', -6,'09:00',-3,'15:00','out',[daisy]),
+    stay('k4', -1,'10:00', 4,'12:00','in',[luna,max], {notes:'Escape artists. Check latches.'}),
+    stay('k5',  0,'08:00', 1,'17:00','in',[biscuit]),
+    stay('k12',-3,'11:00', 2,'10:00','in',[duke]),
+    stay('k1', -2,'09:00',-1,'17:00','out',[zeus], {paid:true}),
+    stay('k18', 1,'10:00', 5,'15:00','booked',[pepper]),
+    stay('k15', 2,'09:00', 7,'16:00','booked',[roxy], {extra:[task('meds',['09:00','19:00'],'Eye drops, 1 drop each eye')]}),
+    stay('k6',  1,'13:00', 3,'11:00','booked',[ginger]),
+    stay('k3',  3,'09:00', 6,'16:00','booked',[coco]),
+    stay('k8',  5,'09:00', 8,'16:00','booked',[murphy])];
+
+  const data = {v:4, kennels, tpl,
+    tags:[
+      {id:'feed',name:'Feed',color:'#16A34A'},
+      {id:'potty',name:'Potty',color:'#0EA5E9'},
+      {id:'meds',name:'Meds',color:'#F59E0B'},
+      {id:'diet',name:'Special diet',color:'#A855F7'}],
+    clients, stays, log:{}};
+
+  // Fill in check-offs up to now so the demo looks like a normal day, leaving one thing overdue to show it off.
+  const prev = S; S = data;
+  const nowS = stamp(today(), nowHM());
+  let n = 0;
+  for(const s of stays) if(s.status!=='booked') for(let D=s.start; D<=s.end && D<=today(); D=addDays(D,1)){
+    for(const it of tasksFor(s,D)){
+      if(stamp(D,it.tm) >= nowS) continue;
+      if(s.status==='out' && stamp(D,it.tm) > stayEnd(s)) continue;
+      if(it.p===duke && D===today() && it.tm==='12:00') continue;   // the one overdue item
+      setDone(it, atTime(D,it.tm) + ((n++*7)%18 - 3)*60000);
+    }
+  }
+  S = prev;
+  return data;
+}
+
+let S;   // all data; loaded just before the first render, once every helper exists
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} };
+
+// U = what's on screen. sh = the open sheet, pk = a picker opened on top of it.
+const U = {open:new Set(), tab:'cal', wk:weekStart(today()), day:null, q:'', sh:null, pk:null};
+
+const tag = id => S.tags.find(t=>t.id===id) || {id, name:'(deleted tag)', color:'#6B7280', del:true};
+const liveTag = t => !t.del && !t.arch;
+const kennel = id => S.kennels.find(k=>k.id===id) || {id, name:'(removed)'};
+const client = id => S.clients.find(c=>c.id===id);
+const findPet = id => { for(const c of S.clients) for(const p of c.pets) if(p.id===id) return {p,c}; return null; };
+const petNames = s => s.pets.map(i=>findPet(i)?.p.name || '?').join(' & ');
+const famOf = s => findPet(s.pets[0])?.c.name || '';
+const withFam = s => petNames(s) + (famOf(s) ? ' ('+famOf(s)+')' : '');
+const stayClient = s => findPet(s.pets[0])?.c;
+const stayStart = s => stamp(s.start, s.arr), stayEnd = s => stamp(s.end, s.pick);
+const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
+const clash = (f, kennelId) => S.stays.find(s => s.id!==f.id && s.kennel===kennelId && s.status!=='out' && overlaps(s,f));
+const statusColor = s => s.status==='out' ? (s.paid ? '#4B5563' : '#B45309') : s.status==='in' ? '#0F766E' : '#1D4ED8';
+const statusText = s => s.status==='out' ? (s.paid ? 'Out, paid' : 'Out, unpaid') : STATUS[s.status];
+
+/* vaccines: the owner confirms they're up to date (yes/no), as on the intake waiver */
+const vaxSummary = p => p.vaxOk==='yes' ? 'Vaccines up to date' : p.vaxOk==='no' ? 'Vaccines NOT up to date' : 'Vaccines not confirmed';
+const vaxWarn = p => p.vaxOk==='yes' ? '' : p.vaxOk==='no' ? 'Vaccines not up to date' : 'Vaccines not confirmed';
+
+/* ---------- DOM helpers ---------- */
+function h(tagName, attrs, ...kids){
+  const e = document.createElement(tagName);
+  for(const k in (attrs||{})){
+    const v = attrs[k];
+    if(v===false || v==null) continue;
+    if(k.startsWith('on')) e[k] = v;
+    else if(k==='style') e.style.cssText = v;
+    else if(k==='value' || k==='checked') e[k] = v;
+    else if(k==='html') e.innerHTML = v;
+    else e.setAttribute(k, v===true ? '' : v);
+  }
+  for(const c of kids.flat(Infinity)){
+    if(c===false || c==null || c==='') continue;
+    e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+const AFTER = [];   // things to run once the new DOM is on the page (e.g. scroll a wheel into place)
+const btn = (label, fn, cls='b', extra={}) => h('button', {class:cls, onclick:fn, ...extra}, label);
+const field = (label, el) => h('div', {class:'f'}, h('span',{class:'lbl'},label), el);
+const inp = (val, fn, a={}) => h('input', {value: val ?? '', onchange: e => fn(e.target.value), ...a});
+const area = (val, fn, a={}) => h('textarea', {onchange: e => fn(e.target.value), ...a}, val||'');
+// a tappable field that shows a value and opens a picker
+const fieldBtn = (text, placeholder, onclick, sub) => h('button',{class:'fld', onclick},
+  h('span',{class:'v'}, text ? text : h('span',{class:'ph'}, placeholder), sub && h('span',{class:'sub'}, '  '+sub)), h('span',{class:'chev'},'▾'));
+const chip = (label, on, fn, cls='') => h('button',{class:'chip '+(on?'on ':'')+cls, 'aria-pressed':on?'true':'false', onclick:fn}, label);
+const seg = (opts, cur, fn) => h('div',{class:'seg', role:'group'}, opts.map(([v,l]) => h('button',{class:v===cur?'on':'', 'aria-pressed':v===cur?'true':'false', onclick:()=>fn(v)}, l)));
+
+const commit = () => { save(); render(); };
+const open = sh => { U.sh = sh; U.pk = null; render(); };
+const close = () => { U.sh = null; U.pk = null; render(); };
+const confirmSheet = (title, msg, label, fn, back) => open({t:'confirm', title, msg, label, fn, back});
+
+/* ---------- sheets ---------- */
+function sheet(title, body, foot, onClose = close){
+  return h('div',{class:'ov', onclick:e=>{ if(e.target===e.currentTarget) onClose(); }},
+    h('div',{class:'sh', role:'dialog', 'aria-modal':'true', 'aria-label':title},
+      h('div',{class:'hd'}, h('h1',{}, title), btn('×', onClose, 'ic', {'aria-label':'Close'})),
+      h('div',{class:'sb'}, body),
+      foot && h('div',{class:'ft'}, foot)));
+}
+
+/* ============================== PICKERS ============================== */
+const openPick = pk => { U.pk = pk; render(); };
+const closePick = () => { U.pk = null; render(); };
+
+// One scrollable wheel. values: [[value,label]]. Calls onChange as it settles.
+function wheel(values, cur, onChange, label){
+  const IH = 40;
+  let idx = Math.max(0, values.findIndex(v=>v[0]===cur));
+  const items = values.map(([v,l],i) => h('div',{class:'wi'+(i===idx?' sel':''), onclick:()=>el.scrollTo({top:i*IH, behavior:'smooth'})}, l));
+  const el = h('div',{class:'wheel', role:'listbox', 'aria-label':label, tabindex:'0'}, h('div',{class:'sp'}), items, h('div',{class:'sp'}));
+  el.onscroll = () => {
+    const i = Math.max(0, Math.min(values.length-1, Math.round(el.scrollTop/IH)));
+    if(i!==idx){ items[idx].classList.remove('sel'); items[i].classList.add('sel'); idx = i; onChange(values[i][0]); }
+  };
+  el.onkeydown = e => { if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); el.scrollTo({top:(idx+(e.key==='ArrowDown'?1:-1))*IH, behavior:'smooth'}); } };
+  AFTER.push(() => { el.scrollTop = idx*IH; });
+  return el;
+}
+
+/* ---------- color picker: wheel (hue around, strength outward), brightness slider, R G B boxes ---------- */
+const hexToRgb = x => { const n = parseInt(x.slice(1),16); return [n>>16&255, n>>8&255, n&255]; };
+const rgbToHex = (r,g,b) => '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  let h = d===0 ? 0 : mx===r ? ((g-b)/d)%6 : mx===g ? (b-r)/d+2 : (r-g)/d+4; h = (h*60+360)%360;
+  return [h, mx===0 ? 0 : d/mx, mx]; }
+function hsvToRgb(h,s,v){ const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+  const [r,g,b] = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return [(r+m)*255,(g+m)*255,(b+m)*255]; }
+function pickColor(value, onSet){ openPick({kind:'color', value:value||'#16A34A', onSet}); }
+function colorPickerView(pk){
+  const st = pk.st || (pk.st = (()=>{ const [h,s,v] = rgbToHsv(...hexToRgb(pk.value)); return {h,s,v:Math.max(v,.25)}; })());
+  const SIZE = 220, R0 = SIZE/2;
+  const cv = h('canvas',{class:'cwheel', width:SIZE*2, height:SIZE*2, 'aria-label':'Color wheel'});
+  const mark = h('div',{class:'cmark'});
+  const prev = h('div',{class:'cprev'});
+  const ins = ['R','G','B'].map(l => h('input',{type:'number', min:0, max:255, inputmode:'numeric', 'aria-label':l}));
+  const range = h('input',{type:'range', class:'crange', min:20, max:100, 'aria-label':'Brightness'});
+  const drawWheel = () => {
+    const ctx = cv.getContext('2d'), N = SIZE*2, img = ctx.createImageData(N,N), r = N/2;
+    for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+      const dx=x-r, dy=y-r, d=Math.sqrt(dx*dx+dy*dy); if(d>r) continue;
+      const [R,G,B] = hsvToRgb((Math.atan2(dy,dx)*180/Math.PI+360)%360, d/r, st.v);
+      const i=(y*N+x)*4; img.data[i]=R; img.data[i+1]=G; img.data[i+2]=B; img.data[i+3]=255; }
+    ctx.putImageData(img,0,0);
+  };
+  const sync = (fromInputs) => {
+    const rgb = hsvToRgb(st.h, st.s, st.v), hex = rgbToHex(...rgb);
+    const a = st.h*Math.PI/180;
+    mark.style.left = (R0 + Math.cos(a)*st.s*R0)+'px'; mark.style.top = (R0 + Math.sin(a)*st.s*R0 + 4)+'px';
+    mark.style.background = hex; prev.style.background = hex;
+    if(!fromInputs) ins.forEach((el,i)=>el.value = Math.round(rgb[i]));
+    range.value = Math.round(st.v*100);
+  };
+  const fromPoint = e => { const b = cv.getBoundingClientRect(), dx = e.clientX-b.left-b.width/2, dy = e.clientY-b.top-b.height/2;
+    st.h = (Math.atan2(dy,dx)*180/Math.PI+360)%360; st.s = Math.min(1, Math.sqrt(dx*dx+dy*dy)/(b.width/2)); sync(); };
+  cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); fromPoint(e); };
+  cv.onpointermove = e => { if(e.buttons || e.pointerType==='touch') if(cv.hasPointerCapture(e.pointerId)) fromPoint(e); };
+  range.oninput = () => { st.v = range.value/100; drawWheel(); sync(); };
+  ins.forEach(el => el.oninput = () => { const v = ins.map(x => Math.max(0,Math.min(255, +x.value||0)));
+    [st.h, st.s, st.v] = rgbToHsv(...v); st.v = Math.max(st.v,.01); drawWheel(); sync(true); });
+  AFTER.push(() => { drawWheel(); sync(); });
+  const finish = () => { const fn = pk.onSet; U.pk = null; fn(rgbToHex(...hsvToRgb(st.h,st.s,st.v))); render(); };
+  return h('div',{class:'ov pk', onclick:e=>{ if(e.target===e.currentTarget) closePick(); }},
+    h('div',{class:'sh', role:'dialog', 'aria-label':'Custom color'},
+      h('div',{class:'hd'}, h('h1',{}, 'Custom color'), btn('×', closePick, 'ic', {'aria-label':'Close'})),
+      h('div',{class:'cwrap'}, cv, mark),
+      field('Brightness', range),
+      h('div',{class:'crow', style:'margin-bottom:6px'}, prev, ['Red','Green','Blue'].map((l,i)=>field(l, ins[i]))),
+      h('div',{class:'ft'}, btn('Cancel', closePick, 'b2'), btn('Use this color', finish))));
+}
+
+// Time picker: hour, minute, AM/PM wheels. step = minute step.
+function pickTime(title, value, onSet, opts={}){
+  openPick({kind:'time', title, value:value||'09:00', onSet, step:opts.step||5, now:opts.now});
+}
+function timePickerView(pk){
+  const step = pk.step;
+  let [H, M] = pk.value.split(':').map(Number);
+  M = Math.round(M/step)*step; if(M>=60){ M = 60-step; }
+  const st = pk.st || (pk.st = {h:(H%12)||12, m:M, ap:H<12?'AM':'PM'});
+  const val = () => pad2((st.h%12) + (st.ap==='PM'?12:0))+':'+pad2(st.m);
+  const hours = [...Array(12)].map((_,i)=>[i+1, String(i+1)]);
+  const minutes = [...Array(60/step)].map((_,i)=>[i*step, pad2(i*step)]);
+  const finish = v => { const fn = pk.onSet; U.pk = null; fn(v); render(); };
+  return h('div',{class:'ov pk', onclick:e=>{ if(e.target===e.currentTarget) closePick(); }},
+    h('div',{class:'sh', role:'dialog', 'aria-label':pk.title},
+      h('div',{class:'hd'}, h('h1',{}, pk.title), btn('×', closePick, 'ic', {'aria-label':'Close'})),
+      h('div',{class:'wheels'}, h('div',{class:'band'}),
+        wheel(hours, st.h, v=>st.h=v, 'Hour'), h('div',{class:'colon'},':'),
+        wheel(minutes, st.m, v=>st.m=v, 'Minute'),
+        wheel([['AM','AM'],['PM','PM']], st.ap, v=>st.ap=v, 'AM or PM')),
+      h('div',{class:'ft'},
+        pk.now ? btn('Now', ()=>finish(nowHM()), 'b2') : btn('Cancel', closePick, 'b2'),
+        btn('Set '+'time', ()=>finish(val())))));
+}
+
+// List picker: searchable, used for families, kennels and care types.
+// items(q) -> [{id,label,sub,on,swatch}]; onPick(id); action: {label:q=>text, fn:q=>{}}
+function pickList(pk){ openPick({kind:'list', q:'', ...pk}); }
+function listPickerView(pk){
+  const list = h('div',{class:'plist'});
+  const draw = () => {
+    const q = pk.q.trim(), items = pk.items(q.toLowerCase());
+    const choose = id => { const fn = pk.onPick; U.pk = null; fn(id); render(); };
+    list.replaceChildren(...[
+      pk.action && h('button',{class:'pitem new', onclick:()=>{ const fn = pk.action.fn; U.pk = null; fn(q); }}, pk.action.label(q)),
+      ...items.map(it => h('button',{class:'pitem'+(it.on?' on':''), onclick:()=>choose(it.id)},
+        it.swatch && h('span',{class:'sw', style:'width:14px;height:14px;border-radius:50%;background:'+it.swatch}),
+        h('div',{class:'grow'}, h('div',{class:'t'}, it.label, it.pill), it.sub && h('div',{class:'s'}, it.sub)),
+        it.on && h('span',{class:'tick-on'},'✓'))),
+      !items.length && h('div',{class:'empty'}, q ? 'No match for “'+q+'”.' : 'Nothing here yet.')
+    ].filter(Boolean));
+  };
+  draw();
+  const search = pk.search && h('input',{type:'search', value:pk.q, placeholder:pk.search, 'aria-label':pk.search, autocomplete:'off',
+    oninput:e=>{ pk.q = e.target.value; draw(); }});
+  if(search && pk.focus) AFTER.push(() => search.focus());
+  return h('div',{class:'ov pk', onclick:e=>{ if(e.target===e.currentTarget) closePick(); }},
+    h('div',{class:'sh', role:'dialog', 'aria-label':pk.title, style:'height:'+(pk.search?'86dvh':'auto')},
+      h('div',{class:'hd'}, h('h1',{}, pk.title), btn('×', closePick, 'ic', {'aria-label':'Close'})),
+      search && h('div',{class:'sticky-search'}, search),
+      list, h('div',{style:'height:calc(16px + env(safe-area-inset-bottom,0px))'})));
+}
+
+function pickTag(cur, onPick){
+  pickList({title:'Type of care', items:() => S.tags.filter(t=>liveTag(t) || t.id===cur).map(t => ({id:t.id, label:t.name, swatch:t.color, on:t.id===cur})),
+    onPick, action:{label:()=>'+ New type of care', fn:()=>open({t:'tag', back:U.sh})}});
+}
+
+/* ---------- collapsible section: header shows a one-line summary when closed ---------- */
+function group(id, title, summary, body, opts={}){
+  const isOpen = U.open.has(id);
+  return h('div',{class:'grpbox'},
+    h('button',{class:'grph', 'aria-expanded':isOpen?'true':'false', onclick:()=>{ isOpen ? U.open.delete(id) : U.open.add(id); render(); }},
+      h('div',{class:'grow'}, h('div',{class:'grpt'}, title, opts.pill), !isOpen && summary && h('div',{class:'grps'}, summary)),
+      h('span',{class:'grpc'}, isOpen ? '−' : '+')),
+    isOpen && h('div',{class:'grpb'}, body));
+}
+const join = (...a) => a.flat().filter(Boolean).join(' · ');
+
+/* ---------- care-plan editor (default plan, each pet's plan, and stay extras) ---------- */
+function planEditor(plan, pets){
+  const nextTime = t => { const last = t.times[t.times.length-1]; return last ? pad2(Math.min(21, +last.slice(0,2)+4))+':00' : '08:00'; };
+  return h('div',{},
+    plan.map((t,i) => { const tg = tag(t.tag);
+      return h('div',{class:'card st', style:'border-left-color:'+tg.color},
+        h('div',{class:'row'},
+          h('button',{class:'chip', onclick:()=>pickTag(t.tag, id=>{ t.tag=id; save(); })}, h('span',{class:'sw', style:'margin:0;border-radius:50%;background:'+tg.color}), tg.name, h('span',{class:'mut'},' ▾')),
+          btn('Remove', ()=>{ plan.splice(i,1); commit(); }, 'lk bad')),
+        pets && pets.length>1 && h('div',{class:'chips'},
+          [{id:'',name:'All pets'}, ...pets].map(p => chip(p.name, (t.pet||'')===p.id, ()=>{ t.pet=p.id; commit(); }))),
+        h('div',{class:'chips'},
+          t.times.map((tm,j) => h('span',{class:'chip tchip'},
+            h('button',{'aria-label':'Change '+t12(tm), onclick:()=>pickTime('Change time', tm, v=>{ t.times[j]=v; t.times=[...new Set(t.times)].sort(); save(); })}, t12(tm)),
+            h('button',{class:'cx', 'aria-label':'Remove '+t12(tm), onclick:()=>{ t.times.splice(j,1); commit(); }},'×'))),
+          chip('+ Time', false, ()=>pickTime('Add a time', nextTime(t), v=>{ if(!t.times.includes(v)) t.times.push(v); t.times.sort(); save(); }), 'add')),
+        !t.times.length && h('div',{class:'mut', style:'margin-bottom:8px'},'No set time, so it shows as a standing note.'),
+        inp(t.note, v=>{ t.note=v; save(); }, {'aria-label':'Note', placeholder:'Note (amount, instructions)'}));
+    }),
+    btn('+ Add care', ()=>pickTag(null, id=>{ const t = task(id,[],''); plan.push(t); save();
+      setTimeout(()=>pickTime(tag(id).name+': first time', '08:00', v=>{ t.times=[v]; save(); }), 0); }), 'chip add'));
+}
+const planReadOnly = plan => plan.length ? plan.map(t => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
+  h('b',{}, tag(t.tag).name),
+  h('div',{class:'mut'}, [t.times.map(t12).join(', '), t.note].filter(Boolean).join(' · ') || 'No set time'))) : h('p',{class:'mut'},'No care set up.');
+
+/* ---------- care tasks for a stay on a given day ---------- */
+function tasksFor(s, D){
+  if(D < s.start || D > s.end) return [];
+  const out = [];
+  for(const pid of s.pets){
+    const x = findPet(pid); if(!x) continue;
+    const list = x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid));
+    for(const t of list) for(const tm of t.times){
+      if(D===s.start && tm < s.arr) continue;   // before drop-off
+      if(D===s.end && tm > s.pick) continue;    // after pickup
+      out.push({s, p:x.p, c:x.c, t, tm, key:[s.id,pid,t.id,D,tm].join('|'), D});
+    }
+  }
+  return out.sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : 0);
+}
+function setDone(it, ms){ const tg = tag(it.t.tag); S.log[it.key] = {at:ms, tag:tg.name, color:tg.color, pet:it.p.name}; }
+const doneSheet = it => open({t:'done', sid:it.s.id, D:it.D, key:it.key});
+// Unchecked: tap marks done now. Checked: tap opens the editor, so a stray tap can't undo it.
+function toggleDone(it){
+  if(S.log[it.key]) { doneSheet(it); return; }
+  // on another day, "now" would be the wrong date, so use the scheduled time instead
+  setDone(it, it.D===today() ? Date.now() : atTime(it.D, it.tm)); commit();
+}
+const isLate = it => !S.log[it.key] && it.s.status==='in' && stamp(it.D,it.tm) < stamp(today(), nowHM());
+
+/* ============================== CALENDAR ============================== */
+// Care with no set time (e.g. special diet) is a dot on the label; timed care is a mark on the track under the bar.
+function calDots(s){
+  const ids = [...new Set(s.pets.flatMap(i=>findPet(i)?.p.plan||[]).concat(s.extra).filter(t=>!t.times.length).map(t=>t.tag))];
+  return ids.map(tag).filter(liveTag).map(t=>h('span',{class:'dot', style:'background:'+t.color, title:t.name}));
+}
+function calView(){
+  // Week view by default; U.range = {start,end} switches to a custom range of days.
+  const td = today();
+  const w = U.range ? U.range.start : U.wk;
+  const n = U.range ? daysBetween(U.range.start, U.range.end) + 1 : 7;
+  const days = [...Array(n)].map((_,i)=>addDays(w,i)), end = days[n-1];
+  const wide = n > 7;                // more than a week: fixed-width day columns, scroll sideways
+  const COL = 40;
+  const head = h('div',{class:'wh'+(wide?' wide':'')}, h('div',{class:'lab'}),
+    days.map((d,i) => { const dt = parseD(d), showMonth = i===0 || dt.getDate()===1;
+      return h('button',{class:d===td?'td':'', 'aria-label':'Open '+longDay(d), onclick:()=>{U.tab='today'; U.day=d; render(); scrollTo(0,0);}},
+        wide ? (showMonth ? dt.toLocaleDateString('en-US',{month:'short'}) : dt.toLocaleDateString('en-US',{weekday:'narrow'}))
+             : dt.toLocaleDateString('en-US',{weekday:'short'}),
+        h('b',{}, dt.getDate())); }));
+
+  const viewStays = S.stays.filter(s => s.start<=end && s.end>=w);
+  // which kennel rows to show: all, ones with a stay in view, or ones with a pet in them right now
+  const inView = S.kennels.filter(k => viewStays.some(s=>s.kennel===k.id));
+  const hereNow = S.kennels.filter(k => S.stays.some(s=>s.kennel===k.id && s.status==='in'));
+  const kf = S.kf || 'all';
+  const shown = kf==='week' ? inView : kf==='now' ? hereNow : S.kennels;
+  const rows = shown.map(k => {
+    const lane = h('div',{class:'lane'},
+      days.map(d => h('button',{class:'cell'+(parseD(d).getDay()===0 && wide ? ' wkstart' : ''), 'aria-label':'New stay in '+k.name+' on '+md(d),
+        onclick:()=>open({t:'form', f:newStayDraft(k.id, d)})})));
+    for(const s of viewStays.filter(s => s.kennel===k.id)){
+      const a = s.start<w ? 0 : (daysBetween(w,s.start) + calFrac(s.arr))/n;
+      const b = s.end>end ? 1 : (daysBetween(w,s.end) + calFrac(s.pick))/n;
+      const width = Math.max(b-a, 0.35/n);
+      const late = s.status==='booked' && stayStart(s) < stamp(td, nowHM());
+      const r = (s.start<w?'0':'6px'), rr = (s.end>end?'0':'6px');
+      const pos = `left:calc(${a*100}% + 1px);width:calc(${width*100}% - 2px);`;
+      lane.append(h('button',{class:'bar'+(late?' late':''),
+        'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':''),
+        style:pos+`background:${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
+        onclick:()=>open({t:'stay', id:s.id})},
+        h('span',{class:'bl'}, h('span',{class:'nm'}, s.start<w?'‹ ':'', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s))), s.end>end && h('span',{class:'arr'},'›')));
+      const marks = [];
+      for(const D of days){
+        const all = tasksFor(s,D), seen = new Set();
+        let clusterStart = -999, k = 0;
+        for(const it of all){
+          const tg = tag(it.t.tag); if(!liveTag(tg) && !tg.del) continue;
+          const id = it.tm+'|'+it.t.tag; if(seen.has(id)) continue; seen.add(id);
+          const done = all.filter(x=>x.tm===it.tm && x.t.tag===it.t.tag).every(x=>S.log[x.key]);
+          // tasks close together (e.g. 7:00 potty, 7:30 feed) sit side by side instead of on top of each other
+          const m = mins(it.tm); if(m - clusterStart < 75) k++; else { clusterStart = m; k = 0; }
+          marks.push({x:(daysBetween(w,D) + calFrac(it.tm))/n, tg, tm:it.tm, done, k});
+        }
+      }
+      if(marks.length) lane.append(
+        h('div',{class:'trk', style:pos+`background:color-mix(in srgb, ${statusColor(s)} 22%, transparent)`}),
+        ...marks.map(m => h('div',{class:'pip'+(m.done?' done':''), title:m.tg.name+' '+t12(m.tm), style:`left:calc(${m.x*100}% + ${m.k*4}px);background:${m.tg.color}`})));
+    }
+    return h('div',{class:'kr'}, h('div',{class:'lab'}, k.name), lane);
+  });
+
+  // grey over the past, red line at now
+  const X = td<w ? 0 : td>end ? 1 : (daysBetween(w,td) + calFrac(nowHM()))/n;
+  const overlay = h('div',{class:'ovl'},
+    h('div',{style:`position:absolute;left:0;top:0;bottom:0;width:${X*100}%;background:var(--shade)`}),
+    X>0 && X<1 && h('div',{style:`position:absolute;top:0;bottom:0;left:${X*100}%;width:2px;margin-left:-1px;background:var(--bad)`}));
+
+  let grid = h('div',{class:'wk', style: wide ? `width:${46 + n*COL}px` : ''}, head,
+    rows.length ? rows : h('p',{class:'empty', style:'position:sticky;left:0;width:min(100vw,560px)'}, kf==='now' ? 'No pets checked in right now.' : 'No stays in these dates.'), overlay);
+  if(wide){
+    const sc = h('div',{class:'wkx', 'data-range':w+'_'+end}, grid);
+    const slide = () => sc.querySelectorAll('.bar').forEach(bar => {
+      const shift = Math.max(0, Math.min(sc.scrollLeft - bar.offsetLeft, bar.offsetWidth - 70));
+      bar.firstChild.style.marginLeft = shift + 'px';
+    });
+    sc.onscroll = () => { U.calX = sc.scrollLeft; slide(); };
+    AFTER.push(slide);
+    AFTER.push(() => {
+      if(U.calKey === w+'_'+end && U.calX != null) sc.scrollLeft = U.calX;
+      else { U.calKey = w+'_'+end; sc.scrollLeft = td>=w && td<=end ? Math.max(0, daysBetween(w,td)*COL - 40) : 0; U.calX = sc.scrollLeft; }
+    });
+    grid = sc;
+  }
+
+  // header: arrows move by the length of what's shown; tapping the dates opens the range picker
+  const step = n, isThisWeek = !U.range && w===weekStart(td);
+  const calTags = S.tags.filter(liveTag);
+  return [
+    h('div',{class:'top'},
+      btn('‹', ()=>{ U.range ? (U.range = {start:addDays(w,-step), end:addDays(end,-step)}) : (U.wk = addDays(w,-7)); render(); }, 'ic', {'aria-label':'Earlier'}),
+      h('div',{class:'mid'},
+        h('button',{class:'rangebtn', 'aria-label':'Change dates shown', onclick:()=>open({t:'range'})}, h('h1',{}, md(w)+' – '+md(end)), h('span',{class:'chev'},'▾')),
+        U.range ? h('div',{class:'row', style:'justify-content:center;gap:4px'}, h('span',{class:'mut'}, plural(n,'day')+' ·'), btn('Back to weeks', ()=>{ U.range=null; U.wk=weekStart(td); render(); }, 'lk', {style:'min-height:28px;padding:0 2px'}))
+          : isThisWeek ? h('div',{class:'mut'},'This week') : btn('Back to this week', ()=>{U.wk=weekStart(td); render();}, 'lk', {style:'min-height:28px'})),
+      btn('›', ()=>{ U.range ? (U.range = {start:addDays(w,step), end:addDays(end,step)}) : (U.wk = addDays(w,7)); render(); }, 'ic', {'aria-label':'Later'})),
+    h('div',{class:'pad', style:'padding-bottom:10px'},
+      h('div',{class:'seg kseg', role:'group', 'aria-label':'Which kennels to show'},
+        [['all','All',S.kennels.length],['week', U.range ? 'In range' : 'This week', inView.length],['now','Here now',hereNow.length]].map(([v,l,c]) =>
+          h('button',{class:kf===v?'on':'', 'aria-pressed':kf===v?'true':'false', onclick:()=>{ S.kf=v; commit(); }}, l, h('span',{class:'n'}, c))))),
+    grid,
+    h('div',{class:'lg'},
+      [['#1D4ED8','Booked'],['#0F766E','In kennel'],['#4B5563','Out, paid'],['#B45309','Out, unpaid']].map(([c,t]) => h('span',{}, h('span',{class:'sw',style:'background:'+c}), t)),
+      h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet')),
+    calTags.length>0 && h('div',{class:'lg'}, h('span',{},'Care:'),
+      calTags.map(t => h('span',{}, h('span',{class:'sw', style:'width:3px;height:10px;border-radius:2px;background:'+t.color}), t.name)), h('span',{},'(faded = done)'))
+  ];
+}
+
+/* date-range picker for the calendar */
+function rangeSheet(u){
+  const td = today();
+  const cur = U.range || {start:U.wk, end:addDays(U.wk,6)};
+  const f = u.f ||= {...cur};
+  const monthStart = td.slice(0,8)+'01';
+  const monthEnd = (() => { const d = parseD(monthStart); d.setMonth(d.getMonth()+1); d.setDate(0); return fmt(d); })();
+  const presets = [
+    ['This week', null],
+    ['2 weeks', {start:weekStart(td), end:addDays(weekStart(td),13)}],
+    ['This month', {start:monthStart, end:monthEnd}],
+    ['Next 30 days', {start:td, end:addDays(td,29)}],
+    ['Next 3 months', {start:td, end:addDays(td,89)}]];
+  const apply = r => { if(r){ U.range = r; } else { U.range = null; U.wk = weekStart(td); } U.sh = null; render(); scrollTo(0,0); };
+  const n = f.start && f.end ? daysBetween(f.start, f.end)+1 : 0;
+  const err = !f.start || !f.end ? 'Pick both dates.' : n < 1 ? 'The end has to be after the start.' : n > 180 ? 'Pick 6 months or less.' : '';
+  return sheet('Dates to show', [
+    h('div',{class:'chips', style:'margin-top:0'}, presets.map(([l,r]) => chip(l, false, ()=>apply(r)))),
+    h('div',{class:'sec'},'Custom'),
+    h('div',{class:'row'},
+      field('From', inp(f.start, v=>{ f.start=v; if(f.end<v) f.end=v; render(); }, {type:'date'})),
+      field('To', inp(f.end, v=>{ f.end=v; render(); }, {type:'date'}))),
+    !err && h('p',{class:'mut', style:'margin-top:-4px'}, plural(n,'day'))
+  ], [err && f.start && f.end ? h('div',{class:'err'}, err) : null, btn('Cancel', close, 'b2'),
+      btn('Show these dates', ()=>{ if(err) return; apply(n===7 && parseD(f.start).getDay()===0 ? null : {start:f.start, end:f.end}); if(n===7 && parseD(f.start).getDay()===0){ U.wk=f.start; render(); } }, 'b', {disabled:!!err})]);
+}
+
+/* ============================== DAY ============================== */
+const staysOn = D => S.stays.filter(s => s.start<=D && s.end>=D);
+const kennelOrder = (a,b) => S.kennels.findIndex(k=>k.id===a.kennel) - S.kennels.findIndex(k=>k.id===b.kennel);
+
+function timeline(D){
+  const HOUR_PX = 56, hours = [...Array(17)].map((_,i)=>i+6), W = HOUR_PX*16;
+  const px = tm => Math.round(dayFrac(tm)*W);
+  const rows = [];
+  for(const s of staysOn(D).sort(kennelOrder)){
+    for(const pid of s.pets){
+      const x = findPet(pid); if(!x) continue;
+      const items = tasksFor(s,D).filter(it=>it.p.id===pid && (s.status!=='out' || S.log[it.key]));
+      if(s.status==='out' && !items.length) continue;
+      const byTime = {}; items.forEach(it => (byTime[it.tm] ||= []).push(it));
+      const track = h('div',{class:'tl-t'}, h('div',{style:'position:absolute;left:0;right:0;top:23px;height:2px;background:var(--line)'}));
+      for(const tm in byTime){
+        const g = byTime[tm];
+        g.forEach((it,i) => {      // ticks at the same time sit side by side
+          const done = S.log[it.key], tg = done ? {name:done.tag,color:done.color} : tag(it.t.tag);
+          track.append(h('button',{class:'tick'+(isLate(it)?' late':'')+(s.status==='booked'?' off':''),
+            disabled: s.status==='booked',
+            'aria-label':tg.name+' '+x.p.name+' '+t12(tm)+(done?' done':''), 'aria-pressed':!!done,
+            style:`left:${px(tm) + (i - (g.length-1)/2)*26}px;background:${tg.color}`,
+            onclick:()=>toggleDone(it)}, done?'✓':''));
+        });
+      }
+      rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
+        h('div',{class:'tl-l', style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(s.kennel).name),
+          h('div',{class:'mut'}, x.p.name+' ('+x.c.name+')')),
+        track));
+    }
+  }
+  const td = today(), X = D<td ? W : D>td ? 0 : px(nowHM());
+  const head = h('div',{class:'tl-r', style:'height:24px'}, h('div',{class:'tl-l'}),
+    h('div',{class:'tl-t'}, hours.map(x => h('span',{style:`position:absolute;top:4px;left:${(x-6)*HOUR_PX}px;transform:translateX(${x===6?'0':x===22?'-100%':'-50%'});font-size:10px;color:var(--mut)`}, (x%12||12)+(x<12?'a':'p')))));
+  const ov = h('div',{style:'position:absolute;left:96px;top:0;bottom:0;width:'+W+'px;pointer-events:none;z-index:3'},
+    h('div',{style:`position:absolute;left:0;top:0;bottom:0;width:${X}px;background:var(--shade)`}),
+    D===td && h('div',{style:`position:absolute;left:${X}px;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bad)`}));
+  return h('div',{class:'tl', 'data-day':D},
+    h('div',{class:'tl-in', style:`width:${W+96+12}px`}, head,
+      rows.length ? rows : h('p',{class:'mut', style:'position:sticky;left:0;padding:10px 16px;margin:0'},'No pets here this day.'), ov));
+}
+
+function dayView(){
+  const D = U.day || today(), td = today();
+  const nav = h('div',{class:'top'},
+    btn('‹', ()=>{U.day=addDays(D,-1); render();}, 'ic', {'aria-label':'Previous day'}),
+    h('div',{class:'mid'}, h('h1',{}, longDay(D)),
+      D!==td ? btn('Back to today', ()=>{U.day=null; render();}, 'lk') : h('div',{class:'mut'},'Today')),
+    btn('›', ()=>{U.day=addDays(D,1); render();}, 'ic', {'aria-label':'Next day'}));
+
+  const arrivals = S.stays.filter(s => s.start===D && s.status==='booked').sort((a,b)=>a.arr<b.arr?-1:1);
+  const pickups = S.stays.filter(s => s.end===D && s.status==='in').sort((a,b)=>a.pick<b.pick?-1:1);
+  const items = staysOn(D).filter(s=>s.status!=='booked').flatMap(s=>tasksFor(s,D)).filter(it=>it.s.status==='in' || S.log[it.key])
+    .sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : kennelOrder(a.s,b.s));
+  const lateN = items.filter(isLate).length;
+
+  const stayLine = (s, action) => h('div',{class:'card row'},
+    h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
+      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(s.kennel).name+' · '+(action==='in' ? 'drop-off '+t12(s.arr) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
+    action==='in' ? btn('Check in', ()=>{s.status='in'; commit();}, 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
+
+  // to-do first, grouped by time; finished items fold into one collapsible section
+  const byTime = list => { const gs = []; for(const it of list){ const g = gs[gs.length-1]; if(g && g.tm===it.tm) g.items.push(it); else gs.push({tm:it.tm, items:[it]}); } return gs; };
+  const row = it => {
+    const done = S.log[it.key], tg = done ? {name:done.tag,color:done.color} : tag(it.t.tag), late = isLate(it);
+    return h('div',{class:'card st row', style:'border-left-color:'+tg.color},
+      h('button',{style:'min-width:0;flex:1;border:0;background:none;padding:0;text-align:left', 'aria-label':'Details for '+tg.name+', '+it.p.name, onclick:()=>doneSheet(it)},
+        h('b',{}, tg.name), late && h('span',{class:'pill bad'},'overdue'),
+        h('div',{}, it.p.name+' ('+it.c.name+') · '+kennel(it.s.kennel).name),
+        it.t.note && h('div',{class:'mut'}, it.t.note),
+        done && h('div',{class:'mut'}, 'Done '+t12(hmOf(done.at)))),
+      h('button',{class:'chk'+(done?' on':''), 'aria-label':(done?'Done: ':'Mark done: ')+tg.name+' for '+it.p.name, 'aria-pressed':!!done, onclick:()=>toggleDone(it)}, done?'✓':''));
+  };
+  const todo = items.filter(it=>!S.log[it.key]), finished = items.filter(it=>S.log[it.key]);
+  const timeGroups = list => byTime(list).map(g => [h('div',{class:'grp'}, t12(g.tm)), g.items.map(row)]);
+
+  const dot = (style, inner) => h('span',{class:'ldot', style}, inner||'');
+  const legend = h('div',{class:'lg', style:'padding-top:2px'},
+    S.tags.filter(liveTag).map(t => h('span',{}, dot('background:'+t.color), t.name)),
+    h('span',{}, dot('background:var(--mut);box-shadow:0 0 0 2px var(--bad)'), 'Overdue'),
+    h('span',{}, dot('background:var(--mut)','✓'), 'Done'),
+    h('span',{}, dot('background:var(--mut);opacity:.4'), 'Not checked in'));
+  return [nav, timeline(D), legend,
+    h('div',{class:'pad'},
+      arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
+      pickups.length>0 && [h('div',{class:'sec'},'Going home'), pickups.map(s=>stayLine(s,'out'))],
+      h('div',{class:'sec'}, h('span',{}, 'Care to do', lateN>0 && h('span',{class:'pill bad'}, lateN+' overdue'))),
+      todo.length ? timeGroups(todo)
+        : h('p',{class:'empty'}, items.length ? 'All care done for this day.' : arrivals.length ? 'Check pets in to see their care here.' : 'No care to do for pets in kennels this day.'),
+      finished.length>0 && h('div',{style:'margin-top:16px'}, group('day-done', 'Done', plural(finished.length,'task')+' checked off', timeGroups(finished))))];
+}
+
+/* ============================== CLIENTS ============================== */
+function matchClient(c, q){
+  if(!q) return true;
+  const qd = q.replace(/\D/g,'');
+  return c.name.toLowerCase().includes(q) || c.pets.some(p=>p.name.toLowerCase().includes(q)) || (qd.length>2 && allPhones(c).some(x=>x.includes(qd))) || (c.first||'').toLowerCase().includes(q);
+}
+const byName = (a,b) => a.name.localeCompare(b.name);
+const clientLine = c => [c.pets.map(p=>p.name).join(', ') || 'No pets yet', bestPhone(c)].filter(Boolean).join(' · ');
+
+function clientsView(){
+  const list = h('div',{class:'pad'});
+  const draw = () => {
+    const res = S.clients.filter(c=>matchClient(c, U.q.trim().toLowerCase())).sort(byName);
+    list.replaceChildren(...(res.length ? res.map(c => h('button',{class:'card row', onclick:()=>open({t:'client',id:c.id})},
+      h('div',{class:'grow'}, h('b',{}, c.name+' family'), h('div',{class:'mut'}, clientLine(c))),
+      h('span',{class:'mut'},'›'))) : [h('p',{class:'empty'}, 'No family matches “'+U.q.trim()+'”.')]));
+  };
+  draw();
+  return [h('div',{class:'top hdr'}, h('h1',{},'Clients'), btn('+ New family', ()=>open({t:'client', name:U.q.trim()}), 'chip add')),
+    h('div',{class:'pad', style:'margin-bottom:10px'},
+      h('input',{type:'search', value:U.q, 'aria-label':'Search clients', placeholder:'Search family, pet or phone', oninput:e=>{U.q=e.target.value; draw();}})),
+    list];
+}
+
+/* ============================== SETTINGS ============================== */
+function settingsView(){
+  return [h('div',{class:'top hdr'}, h('h1',{},'Settings')),
+    h('div',{class:'pad'},
+      h('div',{class:'sec'},'Calendar'),
+      field('Family name on stay bars', seg([['on','Show'],['off','Hide']], S.showFam===false ? 'off' : 'on', v=>{ S.showFam = v==='on'; commit(); })),
+      h('p',{class:'mut', style:'margin-top:-4px'},'On short stays the family name is left out when there isn’t room.'),
+
+      h('div',{class:'sec'},'Kennels'),
+      h('p',{class:'mut', style:'margin-top:0'},'Rename to match the doors. Bookings stay with the kennel.'),
+      h('div',{style:'display:grid;grid-template-columns:repeat(3,1fr);gap:8px'},
+        S.kennels.map(k => inp(k.name, v=>{ if(v.trim()){ k.name=v.trim(); save(); } }, {'aria-label':'Kennel name'}))),
+      h('div',{class:'row start', style:'margin-top:8px'}, btn('+ Add kennel', ()=>open({t:'kennel'}), 'chip add'), S.kennels.length>1 && btn('Remove a kennel', ()=>open({t:'kennelrm'}), 'lk')),
+
+
+      h('div',{class:'sec'},'Types of care'),
+      S.tags.filter(t=>!t.del).map(t => h('button',{class:'card row', onclick:()=>open({t:'tag', id:t.id})},
+        h('span',{class:'row start'}, h('span',{style:`width:22px;height:22px;border-radius:50%;background:${t.color};flex:none`}), h('b',{}, t.name), t.arch && h('span',{class:'pill'},'archived')),
+        h('span',{class:'mut'}, '›'))),
+      btn('+ New type of care', ()=>open({t:'tag'}), 'chip add'),
+
+      h('div',{class:'sec'},'Starting care for new pets'),
+      h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this. Changing it doesn’t change pets already added.'),
+      planEditor(S.tpl),
+
+      h('div',{class:'sec'},'Backup'),
+      h('p',{class:'mut', style:'margin-top:0'},'This prototype saves only in this browser. Export a backup now and then.'),
+      h('div',{class:'row start wrap'},
+        btn('Export backup', exportData, 'b2 sm'),
+        h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, 'Import backup',
+          h('input',{type:'file', accept:'application/json,.json', style:'display:none', onchange:importData}))),
+
+      h('div',{class:'sec'},'Demo'),
+      btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm'))];
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(S,null,1)], {type:'application/json'});
+  const a = h('a',{href:URL.createObjectURL(blob), download:'kennel-backup-'+today()+'.json'});
+  document.body.append(a); a.click(); a.remove();
+}
+function importData(e){
+  const file = e.target.files[0]; if(!file) return;
+  file.text().then(txt => {
+    let d; try { d = JSON.parse(txt); } catch(err) {}
+    d = migrate(d);
+    if(!d || !Array.isArray(d.stays)) { alert('That file isn’t a kennel backup.'); return; }
+    confirmSheet('Replace all data?', 'Everything here is replaced with the backup from that file.', 'Replace', ()=>{ S=d; });
+  });
+}
+
+/* ============================== STAY FORM ============================== */
+function newStayDraft(kennelId, date, clientId){
+  const d = date || today();
+  const f = {id:null, kennel:kennelId||'', client:clientId||'', pets:[], start:d, arr:'09:00', end:addDays(d,1), pick:'16:00', notes:'', belongings:''};
+  if(clientId){ const c = client(clientId); if(c && c.pets.length===1) f.pets = [c.pets[0].id]; }
+  if(!f.kennel) f.kennel = (S.kennels.find(k => !clash(f, k.id)) || S.kennels[0]).id;
+  return f;
+}
+
+function pickFamily(u){
+  const f = u.f;
+  pickList({title:'Choose a family', search:'Search family, pet or phone', focus:true,
+    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===f.client})),
+    onPick: id => { if(id!==f.client){ f.client = id; const c = client(id); f.pets = c.pets.length===1 ? [c.pets[0].id] : []; } u.err = ''; },
+    action: {label: q => q ? '+ New family “'+q+'”' : '+ New family', fn: q => open({t:'client', name:q, back:u})}});
+}
+
+function pickKennel(u){
+  const f = u.f;
+  pickList({title:'Choose a kennel',
+    items: () => S.kennels.map(k => { const hit = clash(f, k.id);
+      return {id:k.id, label:k.name, on:k.id===f.kennel,
+        pill: hit ? h('span',{class:'pill'},'taken') : h('span',{class:'pill ok'},'free'),
+        sub: hit ? withFam(hit)+' · '+md(hit.start)+' – '+md(hit.end) : ''}; }),
+    onPick: id => { f.kennel = id; u.err = ''; }});
+}
+
+function stayForm(u){
+  const f = u.f, c = client(f.client);
+  const nights = f.start && f.end ? daysBetween(f.start, f.end) : 0;
+  const hit = clash(f, f.kennel);
+  const saveStay = () => {
+    const err = !f.client ? 'Choose a family.'
+      : !f.pets.length ? 'Choose at least one pet.'
+      : !f.start || !f.end ? 'Set both days.'
+      : stamp(f.end,f.pick) <= stamp(f.start,f.arr) ? 'Pickup has to be after drop-off.'
+      : hit ? kennel(f.kennel).name+' is taken then. Pick another kennel.' : '';
+    if(err){ u.err = err; render(); return; }
+    const data = {kennel:f.kennel, start:f.start, arr:f.arr, end:f.end, pick:f.pick, pets:[...f.pets], notes:f.notes, belongings:f.belongings};
+    if(f.id) Object.assign(S.stays.find(s=>s.id===f.id), data);
+    else S.stays.push({id:uid('s'), status:'booked', paid:false, extra:[], ...data});
+    U.wk = weekStart(f.start); U.tab = 'cal'; U.sh = f.id ? {t:'stay', id:f.id} : null; commit();
+  };
+  const cancel = f.id ? () => open({t:'stay', id:f.id}) : close;
+  return sheet(f.id ? 'Edit stay' : 'New stay', [
+    field('Family', f.id ? h('div',{class:'fld', style:'border-style:dashed'}, h('span',{class:'v'}, (c?c.name:'?')+' family'))
+      : fieldBtn(c && c.name+' family', 'Choose a family', ()=>pickFamily(u), c && bestPhone(c))),
+    c && field('Pets', h('div',{class:'chips', style:'margin:0'},
+      c.pets.map(p => chip((f.pets.includes(p.id)?'✓ ':'')+p.name, f.pets.includes(p.id), ()=>{ f.pets = f.pets.includes(p.id) ? f.pets.filter(x=>x!==p.id) : [...f.pets, p.id]; u.err=''; render(); })),
+      chip('+ Pet', false, ()=>openNewPet(c, u, true), 'add'))),
+    h('div',{class:'row'},
+      field('Drop-off', inp(f.start, v=>{ f.start=v; if(f.end<v) f.end=v; render(); }, {type:'date', 'aria-label':'Drop-off day'})),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.arr), 'Time', ()=>pickTime('Drop-off time', f.arr, v=>f.arr=v)))),
+    h('div',{class:'row'},
+      field('Pickup', inp(f.end, v=>{ f.end=v; render(); }, {type:'date', 'aria-label':'Pickup day'})),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.pick), 'Time', ()=>pickTime('Pickup time', f.pick, v=>f.pick=v)))),
+    nights>=0 && f.end>=f.start && h('p',{class:'mut', style:'margin:-4px 0 12px'}, nights ? plural(nights,'night') : 'Same-day stay'),
+    field('Kennel', fieldBtn(kennel(f.kennel).name, 'Choose a kennel', ()=>pickKennel(u), hit ? 'taken: '+petNames(hit) : 'free')),
+    c && f.pets.some(id => { const p = findPet(id)?.p; return p && (petFlags(p).length || vaxWarn(p)); }) &&
+      h('div',{class:'warn'}, f.pets.map(id => { const p = findPet(id)?.p; if(!p) return null;
+        const items = petFlags(p).concat(vaxWarn(p) || []);
+        return items.length ? h('div',{}, h('b',{}, p.name+': '), items.join(', ')) : null; })),
+    field('Items brought along', area(f.belongings, v=>f.belongings=v, {placeholder:'Bed, toys, food, leash…'})),
+    field('Notes', area(f.notes, v=>f.notes=v, {placeholder:'Anything else for this stay'})),
+  ], [
+    u.err && h('div',{class:'err', role:'alert'}, u.err),
+    btn('Cancel', cancel, 'b2'), btn(f.id ? 'Save changes' : 'Book stay', saveStay)
+  ], cancel);
+}
+
+/* ============================== STAY DETAIL ============================== */
+// the at-a-glance info staff need while the pet is here
+function petFacts(p){
+  const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
+  const facts = [
+    petFlags(p).length && h('div',{style:'margin-bottom:4px'}, flagPills(p).map(x=>(x.style.marginLeft='0', x.style.marginRight='6px', x))),
+    line('Medical:', p.conditions),
+    line('Food:', [p.food, p.perDay && p.perDay+'×/day', p.dietNotes].filter(Boolean).join(' · ')),
+    line('Treats:', p.treats==='yes' ? 'Yes'+(p.treatFav?', especially '+p.treatFav:'') : p.treats==='no' ? 'No, on a diet' : ''),
+    line('Personality:', p.personality.join(', ')),
+    line('Gets along with:', p.along.join(', ')),
+    line('Likes:', p.likes), line('Dislikes:', p.dislikes), line('Also:', p.notes)
+  ].filter(Boolean);
+  return facts.length ? h('div',{class:'card', style:'font-size:14px'}, facts) : null;
+}
+function stayDetail(u){
+  const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
+  const c = stayClient(s), pets = s.pets.map(i=>findPet(i)?.p).filter(Boolean);
+  const set = (k,v) => { s[k]=v; commit(); };
+  const n = daysBetween(s.start, s.end);
+  const warns = pets.map(p => vaxWarn(p) ? h('div',{class:'warn'}, h('b',{}, p.name+': '), vaxWarn(p)) : null);
+  return sheet(petNames(s), [
+    h('div',{class:'card'},
+      h('div',{class:'row'}, h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)), h('b',{}, kennel(s.kennel).name)),
+      h('div',{style:'margin-top:10px'}, h('b',{},'Drop-off '), wmd(s.start)+', '+t12(s.arr)),
+      h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
+      h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
+      c && h('button',{class:'lk', style:'padding:0;margin-top:4px', onclick:()=>open({t:'client',id:c.id})}, c.name+' family'+(bestPhone(c)?' · '+bestPhone(c):'')+' ›'),
+      s.belongings && h('div',{style:'margin-top:4px'}, h('b',{},'Brought '), s.belongings),
+      s.notes && h('div',{style:'margin-top:6px'}, s.notes)),
+    warns,
+    h('div',{class:'row wrap start'},
+      btn(s.paid ? '✓ Paid' : 'Mark paid', ()=>set('paid',!s.paid), 'chip'+(s.paid?' on':'')),
+      btn('Owner report', ()=>open({t:'report', id:s.id}), 'chip'),
+      btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||''}}), 'chip'),
+),
+    pets.map(p => [h('div',{class:'sec'}, p.name, btn('Edit pet', ()=>open({t:'pet', id:p.id, back:u}), 'lk')),
+      petFacts(p), planReadOnly(p.plan)]),
+    h('div',{class:'sec'},'Extra care for this stay only'),
+    planEditor(s.extra, pets),
+    h('div',{style:'margin:24px 0 8px'}, btn('Delete stay', ()=>confirmSheet('Delete this stay?', petNames(s)+' in '+kennel(s.kennel).name+', '+md(s.start)+' – '+md(s.end)+'. Its check-offs are removed too.', 'Delete', ()=>{
+      S.stays = S.stays.filter(x=>x!==s); for(const k in S.log) if(k.startsWith(s.id+'|')) delete S.log[k];
+    }, u), 'lk bad'))
+  ], s.status==='booked' ? btn('Check in', ()=>set('status','in'))
+    : s.status==='in' ? [btn('Undo check-in', ()=>set('status','booked'), 'b2'), btn('Check out', ()=>open({t:'checkout', id:s.id}))]
+    : [btn('Undo check-out', ()=>set('status','in'), 'b2')]);
+}
+
+function checkoutSheet(u){
+  const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
+  const finish = paid => { s.status='out'; if(paid) s.paid=true; U.sh=null; commit(); };
+  const back = () => open({t:'stay', id:s.id});
+  return sheet('Check out '+petNames(s), h('p',{}, s.paid ? 'This stay is already marked paid.' : 'Has this stay been paid?'),
+    s.paid ? [btn('Cancel', back, 'b2'), btn('Check out', ()=>finish(true))]
+           : [btn('Not yet', ()=>finish(false), 'b2'), btn('Paid', ()=>finish(true))], back);
+}
+
+/* ============================== FAMILY (new and existing use the same sheet) ============================== */
+// text field bound to obj[key]; onSave runs after a change is committed
+function tf(o, k, label, onSave, opts={}){
+  return field(label, h(opts.area?'textarea':'input', {type:opts.area?null:(opts.type||'text'), value:opts.area?null:(o[k]||''), placeholder:opts.ph||'', autocomplete:'off',
+    inputmode:opts.inputmode||null,
+    oninput: opts.live ? e=>{ o[k]=e.target.value; opts.live(); } : null,
+    onchange: e=>{ o[k]=e.target.value.trim(); onSave && onSave(); }}, opts.area ? (o[k]||'') : null));
+}
+const two = (...kids) => h('div',{class:'row', style:'align-items:flex-start'}, kids);
+const telLink = (label, num) => num && h('a',{class:'chip', href:'tel:'+num.replace(/[^\d+]/g,''), style:'text-decoration:none;color:inherit'}, 'Call '+label.toLowerCase());
+
+function clientSheet(u){
+  const isNew = !u.id;
+  const c = isNew ? (u.draft ||= fillClient({id:uid('c'), name:u.name||'', pets:[]})) : client(u.id);
+  if(!c) return null;
+  const sv = () => { if(!isNew) save(); };
+  const back = u.back;   // a stay form waiting for this family
+
+  // live "already in the app?" hint while typing a new family
+  const hint = h('div');
+  const drawHint = () => {
+    if(!isNew) return;
+    const n = c.name.trim().toLowerCase(), phs = allPhones(c);
+    const m = S.clients.filter(x => (n.length>1 && x.name.toLowerCase().startsWith(n)) || phs.some(ph=>allPhones(x).includes(ph))).slice(0,3);
+    hint.replaceChildren(...(m.length ? [h('div',{class:'warn'}, 'Already in the app:',
+      m.map(x => h('button',{class:'pitem', style:'margin-top:6px', onclick:()=>{ if(back){ back.f.client=x.id; back.f.pets = x.pets.length===1?[x.pets[0].id]:[]; open(back); } else open({t:'client', id:x.id}); }},
+        h('div',{class:'grow'}, h('div',{class:'t'}, x.name+' family'), h('div',{class:'s'}, clientLine(x))), h('span',{class:'mut'}, back?'Use':'Open')))) ] : []));
+  };
+  drawHint();
+  const live = {live:drawHint};
+
+  const stays = isNew ? [] : S.stays.filter(s=>s.pets.some(i=>c.pets.some(p=>p.id===i))).sort((a,b)=>a.start<b.start?1:-1);
+
+  const saveNew = () => {
+    if(!c.name.trim()){ u.err = 'Enter a last name.'; render(); return; }
+    c.name = c.name.trim(); S.clients.push(c); save();
+    if(back){ back.f.client = c.id; back.f.pets = c.pets.map(p=>p.id); back.err=''; open(back); }
+    else open({t:'client', id:c.id});
+  };
+
+  const body = [
+    !isNew && (bestPhone(c) || c.emMain || c.vetPhone) && h('div',{class:'chips', style:'margin-top:0'},
+      telLink('Owner', bestPhone(c)), telLink('Emergency', c.emMain), telLink('Vet', c.vetPhone)),
+    two(tf(c,'first','First name',sv), field('Last name', h('input',{value:c.name, autocomplete:'off', placeholder:'Family name',
+      oninput:e=>{ c.name=e.target.value; u.err=''; drawHint(); }, onchange:e=>{ if(!isNew && e.target.value.trim()){ c.name=e.target.value.trim(); commit(); } }}))),
+    two(tf(c,'cell','Cell phone',sv,{type:'tel', ...live}), tf(c,'phone','Main phone',sv,{type:'tel', ...live})),
+    two(tf(c,'work','Work phone',sv,{type:'tel'}), tf(c,'email','Email',sv,{type:'email'})),
+    two(tf(c,'city','City',sv), h('div',{style:'flex:0 0 72px'}, tf(c,'state','State',sv)), h('div',{style:'flex:0 0 92px'}, tf(c,'zip','ZIP',sv,{inputmode:'numeric'}))),
+    hint,
+    h('div',{class:'sec'},'Pets'),
+    c.pets.map(p => h('button',{class:'card row', onclick:()=>open(isNew ? {t:'pet', p, c, back:u} : {t:'pet', id:p.id, back:u})},
+      h('span',{class:'grow'}, h('b',{}, p.name), flagPills(p), h('div',{class:'mut'}, [speciesLabel(p), p.breed, vaxWarn(p)].filter(Boolean).join(' · '))), h('span',{class:'mut'},'›'))),
+    btn('+ Add pet', ()=>openNewPet(c, u), 'chip add'),
+
+    // same order as her intake form; short sections stay open instead of folding
+    h('div',{class:'sec'},'Spouse / co-owner'),
+    tf(c,'coName','Name',sv),
+    two(tf(c,'coMain','Main phone',sv,{type:'tel'}), tf(c,'coAlt','Alt. phone',sv,{type:'tel'})),
+    h('div',{class:'sec'},'Emergency contact'),
+    tf(c,'emName','Name',sv),
+    two(tf(c,'emMain','Main phone',sv,{type:'tel'}), tf(c,'emAlt','Alt. phone',sv,{type:'tel'})),
+    h('div',{class:'sec'},'Veterinarian'),
+    tf(c,'vet','Name',sv),
+    h('div',{style:'width:50%;padding-right:5px'}, tf(c,'vetPhone','Phone',sv,{type:'tel'})),
+    h('div',{class:'sec'},'Who else may pick up'),
+    tf(c,'pickupBy','Names',sv,{ph:'Besides the owners'}),
+    h('div',{class:'sec'},'Waiver'),
+    field('Date signed', h('div',{class:'row'},
+      h('input',{type:'date', value:c.signed||'', 'aria-label':'Waiver signed date', onchange:e=>{ c.signed=e.target.value; isNew ? render() : commit(); }}),
+      !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
+    h('div',{class:'sec'},'Notes'),
+    h('textarea',{'aria-label':'Notes', onchange:e=>{ c.notes=e.target.value.trim(); if(!isNew) commit(); }}, c.notes||''),
+    !isNew && [h('div',{class:'sec'},'Stays'),
+      stays.length ? stays.map(s => h('button',{class:'card row', onclick:()=>open({t:'stay',id:s.id})},
+        h('span',{class:'grow'}, h('b',{}, md(s.start)+' – '+md(s.end)), h('div',{class:'mut'}, petNames(s)+' · '+kennel(s.kennel).name)),
+        h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)))) : h('p',{class:'mut'},'No stays yet.'),
+      h('div',{style:'margin:24px 0 8px'}, btn('Delete family', ()=>confirmSheet('Delete the '+c.name+' family?', 'Also deletes their '+plural(c.pets.length,'pet')+' and '+plural(stays.length,'stay')+'. This can’t be undone.', 'Delete', ()=>{
+        const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
+      }, u), 'lk bad'))]
+  ];
+  const foot = isNew
+    ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back ? ()=>open(back) : close, 'b2'), btn(back ? 'Save & use for stay' : 'Save family', saveNew)]
+    : back ? [btn('Back to the stay', ()=>open(back))]
+    : c.pets.length ? [btn('Book a stay', ()=>open({t:'form', f:newStayDraft(null, today(), c.id)}))] : null;
+  const title = isNew ? 'New family' : (c.first ? c.first+' ' : '')+c.name;
+  return sheet(title, body, foot, back ? ()=>open(back) : close);
+}
+
+/* ============================== PET ============================== */
+// Opens the full pet form for a new pet. c = the family (saved or still being created); back = sheet to return to.
+const NEW_PET_GROUPS = ['n-basic','n-flags','n-health','n-food','n-pers'];
+function openNewPet(c, back, toStay){
+  NEW_PET_GROUPS.forEach(g => U.open.add(g));
+  open({t:'pet', isNew:true, p:newPet('', 'dog'), c, back, toStay});
+}
+const speciesLabel = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Other') : 'Dog';
+// Yes/No toggle; tapping the selected answer again clears it
+const yesNo = (p, k) => seg([['yes','Yes'],['no','No']], p[k], v=>{ p[k] = p[k]===v ? '' : v; commit(); });
+const multiChips = (arr, opts) => h('div',{class:'chips'}, opts.map(o => chip(o, arr.includes(o), ()=>{ const i = arr.indexOf(o); i<0 ? arr.push(o) : arr.splice(i,1); commit(); })));
+
+function petSheet(u){
+  // u.p/u.c: a pet not saved yet (new pet, or a pet on a family that's still being created)
+  const x = u.p ? {p:u.p, c:u.c} : findPet(u.id); if(!x) return null;
+  const {p, c} = x;
+  const saved = S.clients.includes(c) && c.pets.includes(p);
+  const isNew = !!u.isNew;
+  const g = id => (isNew ? 'n' : 'p') + id.slice(1);   // new pets get their sections open
+  const back = () => u.back ? open(u.back) : open({t:'client', id:c.id});
+  const addIt = () => {
+    if(!p.name.trim()){ u.err = 'Enter the pet’s name.'; render(); return; }
+    p.name = p.name.trim(); c.pets.push(p);
+    if(u.toStay && u.back) u.back.f.pets.push(p.id);
+    if(S.clients.includes(c)) save();
+    back();
+  };
+  const flagRow = (k, label) => h('div',{class:'row', style:'min-height:48px'}, h('span',{class:'grow'}, label), h('div',{style:'width:130px'}, yesNo(p,k)));
+  return sheet(isNew ? 'New pet' : p.name, [
+    h('p',{class:'mut', style:'margin-top:0'}, (isNew ? 'For the ' : '')+((c.first?c.first+' ':'')+(c.name||'new'))+(isNew?' family':'')+(p.dob?' · '+ageOf(p.dob):''), flagPills(p)),
+    field('Name', h('input',{value:p.name, autocomplete:'off', placeholder:isNew?'Pet’s name':'', oninput:e=>{ p.name=e.target.value; u.err=''; },
+      onchange:e=>{ if(isNew) return; if(e.target.value.trim()){ p.name=e.target.value.trim(); commit(); } else { e.target.value=p.name; } }})),
+    field('Species', seg([['dog','Dog'],['cat','Cat'],['other','Small mammal']], p.species||'dog', v=>{ p.species=v; commit(); })),
+    p.species==='other' && tf(p,'other','What kind?',save,{ph:'e.g. Rabbit, Guinea pig'}),
+    group(g('p-basic'),'Details', join(p.breed, p.color, p.sex==='m'?'Male':p.sex==='f'?'Female':'', p.fixed==='yes'?(p.sex==='f'?'Spayed':'Fixed'):'', p.dob && ageOf(p.dob)), [
+      two(tf(p,'breed','Breed',save), tf(p,'color','Color',save)),
+      field('Date of birth', inp(p.dob, v=>{ p.dob=v; commit(); }, {type:'date'})),
+      field('Sex', seg([['m','Male'],['f','Female']], p.sex, v=>{ p.sex = p.sex===v?'':v; commit(); })),
+      field(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Spayed / neutered', yesNo(p,'fixed'))]),
+    group(g('p-health'),'Health & vaccines', join(p.conditions, vaxSummary(p)), [
+      field('Vaccines up to date', seg([['yes','Yes'],['no','No']], p.vaxOk, v=>{ p.vaxOk = p.vaxOk===v ? '' : v; commit(); })),
+      tf(p,'conditions','Allergies / medical conditions',commit,{area:true, ph:'None'})], {pill: p.vaxOk!=='yes' && h('span',{class:'pill bad'},'!')}),
+    group(g('p-food'),'Food & treats', join(p.food, p.perDay && p.perDay+'×/day', p.treats==='yes' ? 'Treats OK' : p.treats==='no' ? 'No treats' : ''), [
+      tf(p,'food','Food / brand and amount',save,{ph:'e.g. Purina Pro Plan, 1 cup'}),
+      h('div',{style:'width:50%'}, tf(p,'perDay','Times per day',save,{inputmode:'numeric'})),
+      tf(p,'diet','Describe their diet',save,{area:true}),
+      tf(p,'dietNotes','Special instructions',save,{area:true}),
+      field('Treats', seg([['yes','Yes, please'],['no','No, on a diet']], p.treats, v=>{ p.treats = p.treats===v?'':v; commit(); })),
+      p.treats==='yes' && tf(p,'treatFav','Favorite treats',save)]),
+    group(g('p-pers'),'Personality', join(p.personality.join(', '), p.along.length && 'Good with '+p.along.join(', ').toLowerCase(), p.likes && 'Likes '+p.likes), [
+      multiChips(p.personality, PERSONALITY),
+      h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:10px 0 0'},'Gets along with'),
+      multiChips(p.along, ALONG),
+      two(tf(p,'likes','Likes',save), tf(p,'dislikes','Dislikes',save)),
+      tf(p,'notes','Other things to know',save,{area:true})]),
+
+    group(g('p-flags'),'Behavior', petFlags(p).filter(f=>f!=='Medical').join(', ') || (FLAGS.every(([k])=>p[k]==='no') ? 'No concerns' : ''), [
+      FLAGS.map(([k,l]) => flagRow(k, l))], {pill: FLAGS.some(([k])=>p[k]==='yes') && h('span',{class:'pill bad'},'!')}),
+    h('div',{class:'sec'},'Care schedule'),
+    h('p',{class:'mut', style:'margin-top:0'},'Feeding, potty breaks and meds. For meds, put the name, dose and instructions in the note.'),
+    planEditor(p.plan),
+    !isNew && h('div',{style:'margin:24px 0 8px'}, saved
+      ? btn('Delete '+p.name, ()=>confirmSheet('Delete '+p.name+'?', 'Removes '+p.name+' from their stays. Stays left with no pets are deleted.', 'Delete', ()=>{
+          c.pets = c.pets.filter(y=>y!==p);
+          S.stays.forEach(s=>{ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); });
+          S.stays = S.stays.filter(s=>s.pets.length);
+          U.sh = {t:'client', id:c.id};
+        }, u), 'lk bad')
+      : btn('Remove '+p.name, ()=>{ c.pets = c.pets.filter(y=>y!==p); back(); }, 'lk bad'))
+  ], isNew ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back, 'b2'), btn(u.toStay ? 'Add to stay' : 'Add pet', addIt)] : btn('Done', back), back);
+}
+
+/* ============================== CARE TYPES ============================== */
+function tagSheet(u){
+  const orig = S.tags.find(x=>x.id===u.id);
+  const t = u.draft || (u.draft = orig ? {...orig} : {id:uid('g'), name:'', color:COLORS[(S.tags.length)%COLORS.length]});
+  const cancel = u.back ? ()=>open(u.back) : close;
+  return sheet(orig ? 'Edit '+orig.name : 'New type of care', [
+    field('Name', h('input',{value:t.name, placeholder:'e.g. Walk, Bath, Nail trim', oninput:e=>{ t.name=e.target.value; }})),
+    field('Color', h('div',{class:'colors'},
+      COLORS.map(col => h('button',{class:t.color===col?'on':'', style:'background:'+col, 'aria-label':'Color '+col, 'aria-pressed':t.color===col, onclick:()=>{ t.color=col; render(); }})),
+      // any other color: our own picker
+      h('button',{class:'custom'+(COLORS.includes(t.color)?'':' on'), 'aria-label':'Pick a custom color', style:COLORS.includes(t.color)?'':'background:'+t.color+';border-style:solid',
+        onclick:()=>pickColor(t.color, c=>{ t.color=c; })}, COLORS.includes(t.color) ? '+' : ''))),
+    orig && h('div',{class:'row start', style:'margin:20px 0 8px'},
+      btn(orig.arch?'Restore':'Archive', ()=>{ orig.arch=!orig.arch; U.sh=null; commit(); }, 'lk'),
+      btn('Delete', ()=>open({t:'deltag', id:orig.id}), 'lk bad'))
+  ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', cancel, 'b2'),
+    btn('Save', ()=>{ if(!t.name.trim()){ u.err='Give it a name.'; render(); return; } t.name=t.name.trim(); orig ? Object.assign(orig,t) : S.tags.push(t); save(); cancel(); })], cancel);
+}
+
+function delTagSheet(u){
+  const t = S.tags.find(x=>x.id===u.id); if(!t) return null;
+  const plans = [S.tpl, ...S.clients.flatMap(c=>c.pets.map(p=>p.plan)), ...S.stays.map(s=>s.extra)];
+  const n = plans.reduce((a,pl)=>a + pl.filter(x=>x.tag===t.id).length, 0);
+  const back = () => open({t:'tag', id:t.id});
+  return sheet('Delete “'+t.name+'”?', [
+    h('p',{}, (n ? 'It will be taken off the '+plural(n,'schedule')+' that use it. ' : '')+'Past check-offs still show it.'),
+    n>0 && h('p',{class:'mut'},'To keep it on those schedules but stop using it for new care, archive it instead.')
+  ], [btn('Cancel', back, 'b2'), n>0 && btn('Archive', ()=>{ t.arch=true; U.sh=null; commit(); }, 'b2'), btn('Delete', ()=>{
+        plans.forEach(pl=>{ for(let i=pl.length-1;i>=0;i--) if(pl[i].tag===t.id) pl.splice(i,1); });
+        t.del = true;   // kept (hidden) so old records still know what it was
+        U.sh=null; commit();
+      }, 'b bd')], back);
+}
+
+function confirmView(u){
+  const back = () => u.back ? open(u.back) : close();
+  return sheet(u.title, h('p',{}, u.msg), [btn('Cancel', back, 'b2'), btn(u.label, ()=>{ U.sh=null; u.fn(); commit(); }, 'b bd')], back);
+}
+
+/* ============================== CHECK-OFF TIME ============================== */
+function doneEditor(u){
+  const s = S.stays.find(x=>x.id===u.sid); if(!s) return null;
+  const it = tasksFor(s, u.D).find(x=>x.key===u.key); if(!it) return null;
+  const done = S.log[it.key], tg = tag(it.t.tag);
+  if(u.tm == null) u.tm = done ? hmOf(done.at) : (u.D===today() && it.tm>nowHM() ? nowHM() : it.tm);
+  return sheet(tg.name+' · '+it.p.name, [
+    h('p',{class:'mut', style:'margin-top:0'}, 'Due '+t12(it.tm)+', '+longDay(u.D)+(it.t.note?' · '+it.t.note:'')),
+    field(done ? 'Done at' : 'Done at (set the time it happened)', fieldBtn(t12(u.tm), 'Time', ()=>pickTime('Time done', u.tm, v=>u.tm=v, {step:1, now:true}))),
+    done && btn('Mark as not done', ()=>{ delete S.log[it.key]; U.sh=null; commit(); }, 'lk bad')
+  ], [btn('Cancel', close, 'b2'), btn(done ? 'Save' : 'Mark done', ()=>{ setDone(it, atTime(u.D, u.tm)); U.sh=null; commit(); })]);
+}
+
+/* ============================== OWNER REPORT ============================== */
+// What the owner gets at pickup: dates, what was done for each pet each day, a note, and what goes home.
+function reportPaper(s){
+  const c = stayClient(s), pets = s.pets.map(i=>findPet(i)?.p).filter(Boolean);
+  const days = []; for(let D=s.start; D<=s.end; D=addDays(D,1)) days.push(D);
+  const dayBlocks = days.map(D => {
+    const done = tasksFor(s,D).filter(it=>S.log[it.key]);
+    if(!done.length) return null;
+    return [h('div',{class:'day'}, wmd(D)),
+      pets.map(p => {
+        const mine = done.filter(it=>it.p.id===p.id); if(!mine.length) return null;
+        const byTag = {};
+        mine.forEach(it => { const e = S.log[it.key]; (byTag[e.tag] ||= []).push(e.at); });
+        return h('div',{class:'pl'}, pets.length>1 && h('b',{}, p.name+': '),
+          Object.entries(byTag).map(([name, ts]) => name+' '+ts.sort((a,b)=>a-b).map(t=>t12(hmOf(t))).join(', ')).join(' · '));
+      })];
+  }).filter(Boolean);
+  const items = (s.belongings||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
+  return h('div',{class:'paper'},
+    h('h2',{}, BUSINESS),
+    h('div',{class:'sub'}, 'Stay report'),
+    h('h3',{}, petNames(s)+(c ? ' · '+((c.first?c.first+' ':'')+c.name) : '')),
+    h('div',{}, h('b',{},'Dropped off: '), wmd(s.start)+', '+t12(s.arr)),
+    h('div',{}, h('b',{},'Picked up: '), wmd(s.end)+', '+t12(s.pick)),
+    s.report && [h('h3',{},'A note from us'), h('div',{class:'msg'}, s.report)],
+    h('h3',{},'Care during the stay'),
+    dayBlocks.length ? dayBlocks : h('div',{class:'sub'},'No care was logged for this stay.'),
+    items.length>0 && [h('h3',{},'Going home'), items.map(x => h('div',{}, h('span',{class:'box'}), x))],
+    h('p',{class:'sub', style:'margin-top:18px'}, 'Thank you for staying with us!'));
+}
+function printReport(s){
+  const el = document.getElementById('print');
+  el.replaceChildren(reportPaper(s));
+  const old = document.title; document.title = (petNames(s)+' stay report '+s.end).replace(/[^\w &-]/g,'');
+  window.print();
+  document.title = old;
+}
+function reportSheet(u){
+  const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
+  const back = () => open({t:'stay', id:s.id});
+  return sheet('Owner report', [
+    field('Note for the owner', area(s.report, v=>{ s.report=v; commit(); }, {placeholder:'How the stay went, anything to pass on'})),
+    h('p',{class:'mut', style:'margin-top:-4px'},'Preview below. Care comes from check-offs, and the going-home list from items brought along.'),
+    reportPaper(s),
+    h('div',{style:'height:8px'})
+  ], [btn('Back', back, 'b2'), btn('Print / save PDF', ()=>printReport(s))], back);
+}
+
+function kennelSheet(u){
+  const f = u.f ||= {name:''};
+  const add = () => { const n = f.name.trim(); if(!n){ u.err='Enter a kennel name.'; render(); return; }
+    if(S.kennels.some(k=>k.name.toLowerCase()===n.toLowerCase())){ u.err='There’s already a kennel called '+n+'.'; render(); return; }
+    S.kennels.push({id:uid('k'), name:n}); U.sh=null; commit(); };
+  AFTER.push(()=>document.querySelector('.sh input')?.focus());
+  return sheet('Add kennel', [
+    field('Name', h('input',{value:f.name, placeholder:'e.g. D17', autocomplete:'off', oninput:e=>{ f.name=e.target.value; u.err=''; }, onkeydown:e=>{ if(e.key==='Enter') add(); }}))
+  ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', close, 'b2'), btn('Add kennel', add)]);
+}
+function kennelRemoveSheet(){
+  return sheet('Remove a kennel', [
+    h('p',{class:'mut', style:'margin-top:0'},'Only kennels with no upcoming or current stays can be removed.'),
+    h('div',{class:'plist'}, S.kennels.map(k => { const busy = S.stays.some(s=>s.kennel===k.id && s.status!=='out');
+      return h('button',{class:'pitem', disabled:busy, onclick:()=>confirmSheet('Remove '+k.name+'?', 'Past stays in it will show the kennel as removed.', 'Remove', ()=>{ S.kennels = S.kennels.filter(x=>x!==k); }, {t:'kennelrm'})},
+        h('div',{class:'grow'}, h('div',{class:'t'}, k.name), busy && h('div',{class:'s'},'In use'))); }))
+  ], null);
+}
+
+const SHEETS = {kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor};
+
+/* ============================== RENDER ============================== */
+const ICONS = {
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  today:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>',
+  clients:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>'};
+
+// the pet name wins: drop the family tag when there isn't room for both
+function fitFamTags(){
+  document.querySelectorAll('.bar .fam').forEach(f => {
+    f.hidden = false;
+    const nm = f.parentNode.querySelector('.nm');
+    if(nm.scrollWidth > nm.clientWidth || (f.clientWidth < 34 && f.scrollWidth > f.clientWidth)) f.hidden = true;
+  });
+}
+let lastSheet = null;
+function render(){
+  const app = document.getElementById('app');
+  const oldSh = app.querySelector('.ov:not(.pk) .sh'), shTop = oldSh ? oldSh.scrollTop : 0;
+  const oldTl = app.querySelector('.tl'), tlLeft = oldTl ? oldTl.scrollLeft : null, tlDay = oldTl?.dataset.day;
+  AFTER.length = 0;
+
+  const view = ({cal:calView, today:dayView, clients:clientsView, settings:settingsView})[U.tab]();
+  // "New stay" lives in the middle of the tab bar so it never covers anything on the page
+  const newDay = U.tab==='today' ? (U.day||today()) : U.range ? (U.range.start<=today() && today()<=U.range.end ? today() : U.range.start)
+    : (U.wk<=today() && today()<=addDays(U.wk,6) ? today() : U.wk);
+  const tab = ([k,n]) => h('button',{class:U.tab===k?'on':'', 'aria-current':U.tab===k?'page':false, onclick:()=>{ if(k==='today' && U.tab!=='today') U.day=null; U.tab=k; U.sh=null; render(); scrollTo(0,0); }},
+      h('span',{html:ICONS[k], style:'display:flex'}), n);
+  const tabs = h('nav',{class:'tabs'},
+    [['cal','Calendar'],['today','Today']].map(tab),
+    h('button',{class:'newtab', 'aria-label':'New stay', onclick:()=>open({t:'form', f:newStayDraft(null, newDay)})}, h('span',{class:'plus'},'+'), 'New stay'),
+    [['clients','Clients'],['settings','Settings']].map(tab));
+  const fab = null;
+  const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
+  if(U.sh && !sh) U.sh = null;
+  const pk = U.pk && (U.pk.kind==='time' ? timePickerView(U.pk) : U.pk.kind==='color' ? colorPickerView(U.pk) : listPickerView(U.pk));
+  app.replaceChildren(...[view, fab, tabs, sh, pk].flat(Infinity).filter(x=>x && x.nodeType));
+  document.body.style.overflow = (sh||pk) ? 'hidden' : '';
+
+  const newSh = app.querySelector('.ov:not(.pk) .sh');
+  if(newSh && U.sh === lastSheet) newSh.scrollTop = shTop;
+  lastSheet = U.sh;
+  const tl = app.querySelector('.tl');
+  if(tl){
+    if(tlLeft!=null && tlDay===tl.dataset.day) tl.scrollLeft = tlLeft;
+    else if(tl.dataset.day===today()) tl.scrollLeft = Math.max(0, dayFrac(nowHM())*56*16 - tl.clientWidth/2 + 96);
+  }
+  AFTER.forEach(fn => fn());
+  fitFamTags();
+}
+try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
+S = migrate(S) || seed();
+render();
+
+// keep the "now" line and overdue marks fresh, but not while something is open or being typed
+setInterval(()=>{ const a = document.activeElement; if(!U.sh && !U.pk && !(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) render(); }, 60000);
+const isTextField = el => el && (el.tagName==='TEXTAREA' || (el.tagName==='INPUT' && !/^(checkbox|radio|file|date|button)$/.test(el.type)));
+document.addEventListener('focusin', e => { if(isTextField(e.target)) document.body.classList.add('typing'); });
+document.addEventListener('focusout', () => setTimeout(() => { if(!isTextField(document.activeElement)) document.body.classList.remove('typing'); }, 50));
+// works offline once loaded (home-screen app)
+if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !U.sh && !U.pk) render(); });
+</script>
+</body>
+</html>
