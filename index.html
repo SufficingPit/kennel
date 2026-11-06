@@ -1450,7 +1450,7 @@ function kennelRemoveSheet(){
 // change goes to Supabase as one small record, and changes from other phones come back.
 // Safety: a phone that just signed in only downloads before it sends anything; the
 // server never erases (rows are only marked deleted); a burst of deletions waits for a yes.
-const SUPA = {url:'', key:''};   // Project URL and anon (publishable) key. Never the service_role key.
+const SUPA = {url:'https://hmkhdmtededcxsjnlqxz.supabase.co', key:'sb_publishable_kNXTM6u_Jl95mmgBpJuzhw_bww2lCiB'};   // Project URL and anon (publishable) key. Never the service_role key.
 const SKEY = KEY + '-sync';
 const MASS_DELETE = 5;           // more stays than this deleted in one go (or 2+ families) are held for a yes
 const syncOn = () => !!(SUPA.url && SUPA.key);
