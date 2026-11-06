@@ -6,8 +6,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kennel">
-<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#111418">
+<script>
+// Appearance is per phone: dark unless this phone picked Light or Match phone
+(function(){ var t = 'dark'; try { t = localStorage.getItem('kennel-theme') || 'dark'; } catch(e){}
+  var dark = t==='dark' || (t==='auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  if(t!=='auto') document.documentElement.dataset.theme = t;
+  document.querySelector('meta[name=theme-color]').content = dark ? '#111418' : '#F7F7F5'; })();
+</script>
 <title>Kennel</title>
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -1071,6 +1077,9 @@ function clientsView(){
 function settingsView(){
   return [h('div',{class:'top hdr'}, h('h1',{},'Settings')),
     h('div',{class:'pad'},
+      h('div',{class:'sec'},'Appearance'),
+      field('On this phone', seg([['dark','Dark'],['light','Light'],['auto','Match phone']], themePref(), setTheme)),
+
       h('div',{class:'sec'},'Calendar'),
       field('Family name on stay bars', seg([['on','Show'],['off','Hide']], S.showFam===false ? 'off' : 'on', v=>{ S.showFam = v==='on'; commit(); })),
 
@@ -1556,6 +1565,15 @@ function kennelRemoveSheet(){
       return h('button',{class:'pitem', disabled:busy, onclick:()=>confirmSheet('Remove '+k.name+'?', 'Past stays in it will show the kennel as removed.', 'Remove', ()=>{ S.kennels = S.kennels.filter(x=>x!==k); }, {t:'kennelrm'})},
         h('div',{class:'grow'}, h('div',{class:'t'}, k.name), busy && h('div',{class:'s'},'In use'))); }))
   ], null);
+}
+
+const themePref = () => { try { return localStorage.getItem('kennel-theme') || 'dark'; } catch(e){ return 'dark'; } };
+function setTheme(t){
+  try { localStorage.setItem('kennel-theme', t); } catch(e){}
+  if(t==='auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  const dark = t==='dark' || (t==='auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name=theme-color]').content = dark ? '#111418' : '#F7F7F5';
+  render();
 }
 
 /* ---------- online booking rules (Settings) ----------
