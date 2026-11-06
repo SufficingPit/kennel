@@ -1192,17 +1192,23 @@ function stayForm(u){
   const f = u.f, c = client(f.client);
   const nights = f.start && f.end ? daysBetween(f.start, f.end) : 0;
   const hit = clash(f, f.kennel);
-  const saveStay = () => {
+  // once a pet is in (or the stay already moved), changing the kennel keeps the earlier days: it's a move
+  const orig = f.id && S.stays.find(s => s.id===f.id), started = !!orig && (orig.status!=='booked' || !!(orig.moves||[]).length);
+  const apply = () => {
     const err = !f.client ? 'Choose a family.'
       : !f.pets.length ? 'Choose at least one pet.'
       : !f.start || !f.end ? 'Set both days.'
       : stamp(f.end,f.pick) <= stamp(f.start,f.arr) ? 'Pickup has to be after drop-off.'
       : hit ? kennel(f.kennel).name+' is taken then. Pick another kennel.' : '';
-    if(err){ u.err = err; render(); return; }
+    if(err){ u.err = err; render(); return null; }
     const data = {kennel:f.kennel, start:f.start, arr:f.arr, end:f.end, pick:f.pick, pets:[...f.pets], notes:f.notes, belongings:f.belongings};
     const sid = f.id || uid('s');
     if(f.id) Object.assign(S.stays.find(s=>s.id===f.id), data);
     else S.stays.push({id:sid, status:'booked', paid:false, extra:[], ...data});
+    return sid;
+  };
+  const saveStay = () => {
+    const sid = apply(); if(!sid) return;
     if(f.req){ save(); reqStayBooked(f, sid); return; }
     U.wk = weekStart(f.start); U.tab = 'cal'; U.sh = f.id ? {t:'stay', id:f.id} : null; commit();
   };
@@ -1221,7 +1227,9 @@ function stayForm(u){
       field('Pickup', fieldBtn(f.end && wmd(f.end), 'Day', ()=>pickDate('Pickup day', f.end, v=>{ f.end=v; }, {min:f.start, span:[f.start, f.end]}))),
       h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.pick), 'Time', ()=>pickTime('Pickup time', f.pick, v=>f.pick=v)))),
     nights>=0 && f.end>=f.start && h('p',{class:'mut', style:'margin:-4px 0 12px'}, nights ? plural(nights,'night') : 'Same-day stay'),
-    field('Kennel', fieldBtn(kennel(f.kennel).name, 'Choose a kennel', ()=>pickKennel(u), hit ? 'taken: '+petNames(hit) : 'free')),
+    started ? field('Kennel', fieldBtn(pieces({...orig, start:f.start, arr:f.arr, end:f.end, pick:f.pick}).map(p => kennel(p.k).name).join(' → '), '',
+        ()=>{ if(apply()){ save(); open({t:'move', id:f.id}); } }, 'tap to move'))
+      : field('Kennel', fieldBtn(kennel(f.kennel).name, 'Choose a kennel', ()=>pickKennel(u), hit ? 'taken: '+petNames(hit) : 'free')),
     c && f.pets.some(id => { const p = findPet(id)?.p; return p && (petFlags(p).length || vaxWarn(p)); }) &&
       h('div',{class:'warn'}, f.pets.map(id => { const p = findPet(id)?.p; if(!p) return null;
         const items = petFlags(p).concat(vaxWarn(p) || []);
@@ -1252,20 +1260,28 @@ function moveSheet(u){
     open({t:'stay', id:s.id}); commit();
   };
   const back = () => open({t:'stay', id:s.id});
+  const ps = pieces(s), moves = [...(s.moves||[])].sort(byWhen);
+  const isNow = !whole && f.date===td && Math.abs(mins(f.time) - mins(now)) < 31;
+  const unmove = m => { s.moves = (s.moves||[]).filter(x => x!==m); if(!s.moves.length) delete s.moves; save(); render(); };
   return sheet('Move '+petNames(s), [
-    h('p',{class:'mut', style:'margin-top:0'}, 'Earlier days keep the kennel they were in.'),
+    // where they've been so far, oldest first; a move can be taken back
+    ps.length > 1 && [h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'}, 'Kennels this stay'),
+      h('div',{class:'card', style:'padding:4px 14px'}, ps.map((p, i) => { const m = i > 0 ? moves.find(x => x.date===p.d && x.time===p.t) : null;
+        return h('div',{class:'row', style:'min-height:48px'+(i ? ';border-top:1px solid var(--line)' : '')},
+          h('div',{class:'grow'}, h('b',{}, kennel(p.k).name), h('div',{class:'mut'}, (i ? 'From ' : 'Drop-off ')+wmd(p.d)+', '+t12(p.t))),
+          m && btn('Take back', ()=>unmove(m), 'lk bad', {'aria-label':'Take back the move to '+kennel(p.k).name})); }))],
+    h('p',{class:'mut', style:'margin:12px 0'}, 'Days before the move keep the kennel they were in. Use Whole stay to fix a booking mistake.'),
     h('div',{class:'row'},
       field('From', fieldBtn(wmd(f.date), 'Day', ()=>pickDate('Move from', f.date, v=>{ f.date = v; }, {min:s.start, span:[s.start, s.end]}))),
       h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.time), 'Time', ()=>pickTime('Move at', f.time, v=>f.time = v, {now:true})))),
     h('div',{class:'row start wrap', style:'margin:-4px 0 12px'}, chip('Whole stay', whole, ()=>{ f.date = s.start; f.time = s.arr; render(); }),
-      s.start <= td && td <= s.end && chip('Now', !whole && f.date===td, ()=>{ f.date = td; f.time = now; render(); })),
+      s.start <= td && td <= s.end && chip('Now', isNow, ()=>{ f.date = td; f.time = now; render(); })),
     h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'}, 'Move to'),
     h('div',{class:'plist'}, S.kennels.map(k => { const hit = k.id!==cur && clash(rest(k.id), k.id);
       return h('button',{class:'pitem', disabled:k.id===cur || !!hit, onclick:()=>go(k.id)},
-        h('div',{class:'grow'}, h('div',{class:'t'}, k.name), h('div',{class:'s'}, k.id===cur ? 'In it now' : hit ? 'Taken: '+withFam(hit) : 'Free')),
+        h('div',{class:'grow'}, h('div',{class:'t'}, k.name), h('div',{class:'s'}, k.id===cur ? (whole ? 'Booked here' : isNow ? 'In it now' : 'In it then') : hit ? 'Taken: '+withFam(hit) : 'Free')),
         k.id!==cur && !hit && h('span',{class:'pill ok'},'free')); })),
-    (s.moves||[]).length > 0 && h('div',{style:'margin:16px 0 8px'}, btn('Undo the last move', ()=>{ s.moves = [...s.moves].sort(byWhen).slice(0,-1); if(!s.moves.length) delete s.moves; back(); commit(); }, 'lk bad'))
-  ], null, back);
+  ], btn('Done', back), back);
 }
 /* ============================== STAY DETAIL ============================== */
 // the at-a-glance info staff need while the pet is here
@@ -1294,7 +1310,8 @@ function stayDetail(u){
   return sheet(petNames(s), [
     h('div',{class:'card'},
       h('div',{class:'row'}, h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)), h('b',{}, kennel(kennelAt(s, today(), nowHM())).name)),
-      pieces(s).length > 1 && h('div',{class:'mut', style:'margin-top:6px'}, pieces(s).map((p, i) => (i ? ' → ' : '')+kennel(p.k).name+(i ? ' from '+md(p.d)+' '+t12(p.t) : ''))),
+      pieces(s).length > 1 && h('button',{class:'lk', style:'padding:0;margin-top:4px;text-align:left;min-height:32px', onclick:()=>open({t:'move', id:s.id})},
+        pieces(s).map((p, i) => (i ? ' → ' : '')+kennel(p.k).name+(i ? ' from '+md(p.d)+' '+t12(p.t) : '')).join('')+' ›'),
       h('div',{style:'margin-top:10px'}, h('b',{},'Drop-off '), wmd(s.start)+', '+t12(s.arr)),
       h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
       h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
