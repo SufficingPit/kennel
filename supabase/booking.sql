@@ -179,7 +179,11 @@ begin
     g := nullif(left(pet->>'group', 2), ''); if g is not null then grouped := true; end if;
     if pet->>'species' = 'dog' then nd := nd + 1; if g is not null and not g = any(dg) then dg := dg || g; end if;
     elsif pet->>'species' = 'cat' then nc := nc + 1; if g is not null and not g = any(cg) then cg := cg || g; end if;
-    else return jsonb_build_object('ok', false, 'reason', 'We board dogs and cats.'); end if;
+    -- other small pets bring a cage (no kennel needed) or take a cat condo of their own
+    elsif pet->>'species' = 'other' then
+      if length(trim(coalesce(pet->>'kind',''))) not between 1 and 40 then return jsonb_build_object('ok', false, 'reason', 'Say what kind of pet each “other” pet is.'); end if;
+      if not coalesce((pet->>'cage')::boolean, true) then nc := nc + 1; grouped := true; cg := cg || ('other' || nc); end if;
+    else return jsonb_build_object('ok', false, 'reason', 'Pick dog, cat or other for each pet.'); end if;
   end loop;
   if grouped then
     if dg && cg then return jsonb_build_object('ok', false, 'reason', 'A dog and a cat can’t share a kennel.'); end if;
