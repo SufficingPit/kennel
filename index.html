@@ -297,6 +297,8 @@ function migrate(d){
   if(d && d.v===4){ if(d.hideEmpty){ d.kf='week'; delete d.hideEmpty; } d.clients.forEach(fillClient); d.stays.forEach(s => { s.report ??= ''; delete s.pickupBy; });
     // vaccines are now one yes/no per pet (the intake waiver just says they're up to date)
     delete d.vaccines; d.clients.forEach(c => c.pets.forEach(p => { delete p.vax; }));
+    // personality is one pick, and "Everyone" stands alone
+    d.clients.forEach(c => c.pets.forEach(p => { p.personality = p.personality.slice(0,1); if(p.along.includes('Everyone')) p.along = ['Everyone']; }));
     return d; }
   return null;
 }
@@ -312,11 +314,11 @@ function seed(){
 
   const tucker = pet('Tucker', {breed:'Corgi', color:'Red & white', sex:'m', fixed:'yes', food:'Purina Pro Plan, 1 cup', perDay:'2', treats:'yes', treatFav:'peanut butter biscuits', personality:['Playful'], along:['Everyone'], likes:'Tennis balls'});
   const hazel = pet('Hazel', {breed:'Golden mix', color:'Gold', sex:'f', fixed:'yes', food:'Purina Pro Plan, 1½ cups', perDay:'2', personality:['Cuddlebug'], along:['Dogs','Humans']});
-  const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Playful','Love at first lick']},
+  const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Love at first lick']},
     [task('diet',[],'Grain-free only, owner’s food')]);
   const gus = pet('Gus', {breed:'Beagle', color:'Tricolor', sex:'m', fixed:'yes', bites:'yes', dislikes:'Being picked up', conditions:'Seasonal allergies', personality:['Shy at first']},
     [task('meds',['08:00'],'Apoquel 16 mg, 1 tablet with breakfast')]);
-  const willow = pet('Willow', {breed:'Shih Tzu', color:'White & tan', sex:'f', fixed:'yes', dob:addDays(today(),-365*12-40), conditions:'Arthritis, mild hearing loss', food:'Hill’s Senior, ½ cup', perDay:'2', personality:['Cuddlebug','Paw-fers privacy']},
+  const willow = pet('Willow', {breed:'Shih Tzu', color:'White & tan', sex:'f', fixed:'yes', dob:addDays(today(),-365*12-40), conditions:'Arthritis, mild hearing loss', food:'Hill’s Senior, ½ cup', perDay:'2', personality:['Paw-fers privacy']},
     [task('meds',['08:00','20:00'],'Rimadyl 25 mg, wrap in cheese'), task('diet',[],'Soften kibble with warm water')]);
   const roxy = pet('Nala', {breed:'Boxer', color:'Fawn', sex:'f', fixed:'yes', personality:['Playful'], along:['Humans']});
   const milo = cat('Mochi', {breed:'Domestic shorthair', color:'Orange tabby', sex:'m', fixed:'yes', conditions:'Diabetic', food:'Purina DM, measured', personality:['Paw-fers privacy']},
@@ -1185,7 +1187,12 @@ function openNewPet(c, back, toStay){
 const speciesLabel = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Other') : 'Dog';
 // Yes/No toggle; tapping the selected answer again clears it
 const yesNo = (p, k) => seg([['yes','Yes'],['no','No']], p[k], v=>{ p[k] = p[k]===v ? '' : v; commit(); });
-const multiChips = (arr, opts) => h('div',{class:'chips'}, opts.map(o => chip(o, arr.includes(o), ()=>{ const i = arr.indexOf(o); i<0 ? arr.push(o) : arr.splice(i,1); commit(); })));
+// solo: options that can't be combined with anything else (true = pick one)
+const multiChips = (arr, opts, solo = []) => h('div',{class:'chips'}, opts.map(o => chip(o, arr.includes(o), ()=>{
+  const i = arr.indexOf(o);
+  if(i >= 0) arr.splice(i,1);
+  else { const keep = solo===true || solo.includes(o) ? [] : arr.filter(x => !solo.includes(x)); arr.splice(0, arr.length, ...keep, o); }
+  commit(); })));
 
 function petSheet(u){
   // u.p/u.c: a pet not saved yet (new pet, or a pet on a family that's still being created)
@@ -1225,9 +1232,9 @@ function petSheet(u){
       field('Treats', seg([['yes','Yes, please'],['no','No, on a diet']], p.treats, v=>{ p.treats = p.treats===v?'':v; commit(); })),
       p.treats==='yes' && tf(p,'treatFav','Favorite treats',save)]),
     group(g('p-pers'),'Personality', join(p.personality.join(', '), p.along.length && 'Good with '+p.along.join(', ').toLowerCase(), p.likes && 'Likes '+p.likes), [
-      multiChips(p.personality, PERSONALITY),
+      multiChips(p.personality, PERSONALITY, true),
       h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:10px 0 0'},'Gets along with'),
-      multiChips(p.along, ALONG),
+      multiChips(p.along, ALONG, ['Everyone']),
       two(tf(p,'likes','Likes',save), tf(p,'dislikes','Dislikes',save)),
       tf(p,'notes','Other things to know',save,{area:true})]),
 
