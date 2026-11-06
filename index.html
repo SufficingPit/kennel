@@ -383,6 +383,7 @@ function migrate(d){
     // personality is one pick, and "Everyone" stands alone
     d.clients.forEach(c => c.pets.forEach(p => { p.personality = p.personality.slice(0,1); if(p.along.includes('Everyone')) p.along = ['Everyone']; }));
     d.book ??= defaultBook(d.kennels);
+    if(d.book.eveFee==null){ d.book.eveFee = 5; d.book.eveFrom ||= '16:00'; }
     return d; }
   return null;
 }
@@ -1767,7 +1768,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAYS_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function defaultBook(kennels){
   const wk = () => [['08:00','09:30'],['16:00','17:30']];
-  return {on:false, hours:[[['17:00','18:00']], wk(), wk(), wk(), wk(), wk(), wk()], fee:10, minN:1, lead:1, ahead:180, hold:48, closed:[], tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+  return {on:false, hours:[[['17:00','18:00']], wk(), wk(), wk(), wk(), wk(), wk()], fee:10, eveFee:5, eveFrom:'16:00', minN:1, lead:1, ahead:180, hold:48, closed:[], tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
     kk:Object.fromEntries(kennels.map(k => [k.id, /^c/i.test(k.name) ? 'cat' : 'dog']))};
 }
 const bookKind = k => S.book.kk[k.id] || (/^c/i.test(k.name) ? 'cat' : 'dog');
@@ -1801,7 +1802,12 @@ function bookingSection(){
       DAYS.map((d, i) => h('button',{class:'card docrow', onclick:()=>open({t:'hours', day:i})},
         h('b',{style:'width:44px;flex:none'}, d), h('span',{class:'grow'}, winText(b.hours[i])), h('span',{class:'mut'},'›'))),
       field('Fee for other times', h('div',{class:'row start'}, h('b',{},'$'),
-        inp(b.fee, v=>{ b.fee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Fee in dollars'})))]),
+        inp(b.fee, v=>{ b.fee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Fee in dollars'}))),
+      field('Evening pickup fee', h('div',{class:'row start wrap'}, h('b',{},'$'),
+        inp(b.eveFee ?? 0, v=>{ b.eveFee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Evening pickup fee in dollars'}),
+        h('span',{class:'mut'},'for pickups at or after'),
+        h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
+      h('p',{class:'mut', style:'margin:0'},'Set the evening fee to 0 for none. The request page shows both fees next to the times.')]),
     group('b-stay','Stay rules', join(nightsText(b.minN)+' minimum', 'book '+(b.lead===0 ? 'same day' : leadText(b.lead)), 'up to '+aheadText(b.ahead)), [
       field('Shortest stay', stepper(b.minN, 1, 30, 1, v=>set('minN', v), nightsText)),
       field('Book at least', stepper(b.lead, 0, 30, 1, v=>set('lead', v), leadText)),
@@ -1960,7 +1966,7 @@ function reqSheet(u){
     r.status==='pending' && !reqHeld(r) && h('div',{class:'warn'},'Not answered in time, so its spots are open again. You can still approve it if there’s room.'),
     h('div',{class:'card'},
       line('Drop-off', wmd(r.start_date)+', '+t12(r.arr)+(offHours(r.start_date, r.arr) ? ' (other time'+fee+')' : '')),
-      line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : '')),
+      line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : S.book.eveFee && r.pick >= (S.book.eveFrom||'16:00') ? ' (evening pickup, $'+S.book.eveFee+')' : '')),
       h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
     h('div',{class:'sec'},'Pets'),
     h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : 'Dog')+(p.breed ? ', '+p.breed : ''))),
