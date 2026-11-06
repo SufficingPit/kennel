@@ -918,7 +918,6 @@ function settingsView(){
     h('div',{class:'pad'},
       h('div',{class:'sec'},'Calendar'),
       field('Family name on stay bars', seg([['on','Show'],['off','Hide']], S.showFam===false ? 'off' : 'on', v=>{ S.showFam = v==='on'; commit(); })),
-      h('p',{class:'mut', style:'margin-top:-4px'},'On short stays the family name is left out when there isn’t room.'),
 
       h('div',{class:'sec'},'Kennels'),
       h('p',{class:'mut', style:'margin-top:0'},'Rename to match the doors. Bookings stay with the kennel.'),
