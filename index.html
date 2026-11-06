@@ -919,6 +919,7 @@ function timeline(D){
         track));
     }
   }
+  if(!rows.length) return null;   // an empty grid would just scroll its own message off screen
   const td = today(), X = D<td ? W : D>td ? 0 : px(nowHM());
   const head = h('div',{class:'tl-r', style:'height:24px'}, h('div',{class:'tl-l'}),
     h('div',{class:'tl-t'}, hours.map(x => h('span',{style:`position:absolute;top:4px;left:${(x-6)*HOUR_PX}px;transform:translateX(${x===6?'0':x===22?'-100%':'-50%'});font-size:10px;color:var(--mut)`}, (x%12||12)+(x<12?' AM':' PM')))));
@@ -928,7 +929,7 @@ function timeline(D){
     D===td && mins(nowHM())>=DAY_START && mins(nowHM())<=DAY_END && h('div',{style:`position:absolute;left:${X}px;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bad)`}));
   return h('div',{class:'tl', 'data-day':D},
     h('div',{class:'tl-in', style:`width:${W+96+12}px`}, head,
-      rows.length ? rows : h('p',{class:'mut', style:'position:sticky;left:0;padding:10px 16px;margin:0'},'No pets here this day.'), ov));
+      rows, ov));
 }
 
 function dayView(){
@@ -976,7 +977,8 @@ function dayView(){
     h('span',{}, dot('background:var(--mut);box-shadow:0 0 0 2px var(--bad)'), 'Overdue'),
     h('span',{}, dot('background:var(--mut)', check()), 'Done'),
     h('span',{}, dot('background:var(--mut);opacity:.4'), 'Not checked in'));
-  return [nav, timeline(D), legend,
+  const tl = timeline(D);
+  return [nav, tl, tl && legend,
     h('div',{class:'pad'},
       arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
       pickups.length>0 && [h('div',{class:'sec'},'Going home'), pickups.map(s=>stayLine(s,'out'))],
@@ -984,7 +986,7 @@ function dayView(){
         h('b',{}, tag(t.tag).name), h('div',{}, p.name+' ('+c.name+') · '+kennel(s.kennel).name), t.note && h('div',{class:'mut'}, t.note)))],
       h('div',{class:'sec'}, h('span',{}, 'Care to do', lateN>0 && h('span',{class:'pill bad'}, lateN+' overdue'))),
       todo.length ? timeGroups(todo)
-        : h('p',{class:'empty'}, items.length ? 'All care done for this day.' : arrivals.length ? 'Check pets in to see their care here.' : 'No care to do for pets in kennels this day.'),
+        : h('p',{class:'empty'}, items.length ? 'All care done for this day.' : arrivals.length ? 'Check pets in to see their care here.' : tl ? 'No care to do for pets in kennels this day.' : 'No pets in kennels this day.'),
       finished.length>0 && h('div',{style:'margin-top:16px'}, group('day-done', 'Done', plural(finished.length,'task')+' checked off', timeGroups(finished))))];
 }
 
