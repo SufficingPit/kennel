@@ -370,7 +370,13 @@ const PET_DEF = {name:'', species:'dog', other:'', breed:'', color:'', dob:'', s
   personality:[], along:[], jumps:'', bites:'', fights:'', chews:'', likes:'', dislikes:'', notes:'', vaxOk:''};
 const fillClient = c => { for(const k in CLIENT_DEF) if(c[k]==null) c[k] = CLIENT_DEF[k]; c.pets ||= []; c.pets.forEach(fillPet); return c; };
 const fillPet = p => { for(const k in PET_DEF) if(p[k]==null) p[k] = Array.isArray(PET_DEF[k]) ? [] : (typeof PET_DEF[k]==='object' ? {} : PET_DEF[k]); p.plan ||= []; return p; };
-function newPet(name, species){ return fillPet({id:uid('p'), name, species:species||'dog', plan:copyPlan(S.tpl)}); }
+const SP = [['dog','Dogs'],['cat','Cats'],['other','Small mammals']];
+const spKey = sp => sp==='cat' ? 'tplCat' : sp==='other' ? 'tplOther' : 'tpl';
+const tplFor = sp => S[spKey(sp)] || S.tpl;
+// cats and small mammals start from the dog care without potty breaks
+const noPotty = plan => copyPlan(plan).filter(t => !/potty/i.test((S.tags||[]).find(g => g.id===t.tag)?.name || t.tag));
+const samePlan = (a, b) => JSON.stringify(a.map(({tag,times,note}) => [tag,times,note||''])) === JSON.stringify(b.map(({tag,times,note}) => [tag,times,note||'']));
+function newPet(name, species){ return fillPet({id:uid('p'), name, species:species||'dog', plan:copyPlan(tplFor(species||'dog'))}); }
 const PERSONALITY = ['Shy at first','Paw-fers privacy','Playful','Cuddlebug','Love at first lick'];
 const ALONG = ['Cats','Dogs','Humans','Everyone'];
 const FLAGS = [['bites','Has bitten'],['fights','Starts fights'],['jumps','Jumps fences'],['chews','Chews beds']];
@@ -398,6 +404,7 @@ function migrate(d){
     d.clients.forEach(c => c.pets.forEach(p => { p.personality = p.personality.slice(0,1); if(p.along.includes('Everyone')) p.along = ['Everyone']; }));
     d.book ??= defaultBook(d.kennels);
     d.rates ??= defaultRates();
+    if(!d.tplCat){ const plain = copyPlan(d.tpl).filter(t => !/potty/i.test((d.tags||[]).find(g => g.id===t.tag)?.name || t.tag)); d.tplCat = plain; d.tplOther = copyPlan(plain); }
     if(d.book.eveFee==null){ d.book.eveFee = 5; d.book.eveFrom ||= '16:00'; }
     // requests now wait for an answer unless auto-decline is turned on (replaces the old fixed hold)
     if('hold' in d.book){ delete d.book.hold; d.book.auto ??= 0; d.book.autoMsg ??= ''; }
@@ -494,7 +501,7 @@ function seed(){
     stay('k3',  3,'09:00', 6,'16:00','booked',[coco]),
     stay('k8',  5,'09:00', 8,'16:00','booked',[murphy])];
 
-  const data = {v:4, seeded:today(), kennels, tpl, book:defaultBook(kennels), rates:defaultRates(),
+  const data = {v:4, seeded:today(), kennels, tpl, tplCat:catPlan(), tplOther:catPlan(), book:defaultBook(kennels), rates:defaultRates(),
     tags:[
       {id:'feed',name:'Feed',color:'#16A34A'},
       {id:'potty',name:'Potty',color:'#0EA5E9'},
@@ -1134,9 +1141,10 @@ function settingsView(){
       btn('+ New type of care', ()=>open({t:'tag'}), 'chip add'),
 
       h('div',{class:'sec'},'Starting care for new pets'),
-      h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this.'),
-      planReadOnly(S.tpl),
-      btn('Edit starting care', ()=>open({t:'tpl', draft:copyPlan(S.tpl)}), 'b2 sm'),
+      h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of the care for its kind.'),
+      SP.map(([sp, label]) => group('t-'+sp, label, tplFor(sp).length ? tplFor(sp).map(t => tag(t.tag).name+(t.times.length ? ' '+t.times.length+'×' : '')).join(' · ') : 'No care set', [
+        planReadOnly(tplFor(sp)),
+        btn('Edit care for '+label.toLowerCase(), ()=>open({t:'tpl', sp, draft:copyPlan(tplFor(sp))}), 'b2 sm')])),
 
       ratesSection(),
 
@@ -1501,7 +1509,9 @@ function petSheet(u){
     h('p',{class:'mut', style:'margin-top:0'}, (isNew ? 'For the ' : '')+((c.first?c.first+' ':'')+(c.name||'new'))+(isNew?' family':'')+(p.dob?' · '+ageOf(p.dob):''), flagPills(p)),
     field('Name', h('input',{value:p.name, autocomplete:'off', placeholder:isNew?'Pet’s name':'', oninput:e=>{ p.name=e.target.value; u.err=''; },
       onchange:e=>{ if(isNew) return; if(e.target.value.trim()){ p.name=e.target.value.trim(); commit(); } else { e.target.value=p.name; } }})),
-    field('Species', seg([['dog','Dog'],['cat','Cat'],['other','Small mammal']], p.species||'dog', v=>{ p.species=v; commit(); })),
+    field('Species', seg([['dog','Dog'],['cat','Cat'],['other','Small mammal']], p.species||'dog', v=>{
+      if(isNew && samePlan(p.plan, tplFor(p.species||'dog'))) p.plan = copyPlan(tplFor(v));
+      p.species=v; commit(); })),
     p.species==='other' && tf(p,'other','What kind?',save,{ph:'e.g. Rabbit, Guinea pig'}),
     group(g('p-basic'),'Details', join(p.breed, p.color, p.sex==='m'?'Male':p.sex==='f'?'Female':'', p.fixed==='yes'?(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Fixed'):'', p.dob && ageOf(p.dob)), [
       two(tf(p,'breed','Breed',save), tf(p,'color','Color',save)),
@@ -1564,14 +1574,14 @@ function tagSheet(u){
 function delTagSheet(u){
   const t = S.tags.find(x=>x.id===u.id); if(!t) return null;
   const dated = [...S.clients.flatMap(c=>c.pets.map(p=>p.plan)), ...S.stays.map(s=>s.extra)];
-  const n = [S.tpl, ...dated].reduce((a,pl)=>a + pl.filter(x=>x.tag===t.id && current(x)).length, 0);
+  const n = [S.tpl, S.tplCat||[], S.tplOther||[], ...dated].reduce((a,pl)=>a + pl.filter(x=>x.tag===t.id && current(x)).length, 0);
   const back = () => open({t:'tag', id:t.id});
   return sheet('Delete “'+t.name+'”?', [
     h('p',{}, (n ? 'It comes off the '+plural(n,'schedule')+' that use it from today. ' : '')+'Earlier days and check-offs still show it.'),
     n>0 && h('p',{class:'mut'},'To keep it on those schedules but stop using it for new care, archive it instead.')
   ], [btn('Cancel', back, 'b2'), n>0 && btn('Archive', ()=>{ t.arch=true; U.sh=null; commit(); }, 'b2'), btn('Delete', ()=>{
         const td = today();
-        S.tpl = S.tpl.filter(x=>x.tag!==t.id);
+        ['tpl','tplCat','tplOther'].forEach(k => { if(S[k]) S[k] = S[k].filter(x=>x.tag!==t.id); });
         // on pets and stays it ends yesterday, so earlier days keep it; care that only started today just goes
         dated.forEach(pl=>{ for(let i=pl.length-1;i>=0;i--){ const x = pl[i]; if(x.tag!==t.id || !current(x)) continue;
           if(x.from && x.from >= td) pl.splice(i,1); else x.until = addDays(td,-1); } });
@@ -2240,7 +2250,7 @@ function records(d){
   d.clients.forEach(c => r['client:'+c.id] = c);
   d.stays.forEach(s => r['stay:'+s.id] = s);
   for(const k in d.log) r['log:'+k] = d.log[k];
-  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam, book:d.book, rates:d.rates};
+  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, tplCat:d.tplCat, tplOther:d.tplOther, showFam:d.showFam, book:d.book, rates:d.rates};
   if(d.site) r['site:main'] = d.site;   // only once someone has edited the website
   return r;
 }
@@ -2253,7 +2263,7 @@ function applyRecord(k, data){
     at>=0 ? arr.splice(at,1,data) : arr.push(data);
   } else if(kind==='log'){ if(data==null) delete S.log[id]; else S.log[id] = data; }
   else if(kind==='site'){ if(data) S.site = data; else delete S.site; }
-  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; if(data.rates) S.rates = data.rates; }
+  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; if(data.rates) S.rates = data.rates; if(data.tplCat) S.tplCat = data.tplCat; if(data.tplOther) S.tplOther = data.tplOther; }
 }
 
 // After every save: queue what changed since the last synced copy
@@ -2535,33 +2545,34 @@ function heldBanner(){
 // Same care as the starting care gave it (a hand-edited copy no longer counts)
 const sameCare = (a, b) => a.tag===b.tag && !a.pet && (a.note||'')===(b.note||'') && a.times.join()===b.times.join();
 // Pets whose current care still includes every item of the given starting care
-const onStartingCare = tpl => S.clients.flatMap(c => c.pets).filter(p => tpl.every(d => p.plan.some(t => current(t) && sameCare(t, d))));
+const onStartingCare = (tpl, sp = 'dog') => S.clients.flatMap(c => c.pets).filter(p => (p.species||'dog')===sp && tpl.every(d => p.plan.some(t => current(t) && sameCare(t, d))));
 function tplSheet(u){
-  const changed = JSON.stringify(u.draft.map(({tag,times,note}) => [tag,times,note||''])) !== JSON.stringify(S.tpl.map(({tag,times,note}) => [tag,times,note||'']));
+  const sp = u.sp || 'dog', cur = tplFor(sp), label = SP.find(x => x[0]===sp)[1].toLowerCase();
+  const changed = !samePlan(u.draft, cur);
   const saveTpl = () => {
     if(!changed){ close(); return; }
-    const pets = S.tpl.length ? onStartingCare(S.tpl) : [];
-    pets.length ? open({t:'tplapply', draft:u.draft, n:pets.length}) : finishTpl(u.draft, false);
+    const pets = cur.length ? onStartingCare(cur, sp) : [];
+    pets.length ? open({t:'tplapply', sp, draft:u.draft, n:pets.length}) : finishTpl(u.draft, false, sp);
   };
-  return sheet('Starting care', [
-    h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this.'),
+  return sheet('Starting care for '+label, [
+    h('p',{class:'mut', style:'margin-top:0'},'Each new '+(sp==='dog' ? 'dog' : sp==='cat' ? 'cat' : 'small mammal')+' starts with a copy of this.'),
     planEditor(u.draft)
   ], [btn('Cancel', close, 'b2'), btn('Save', saveTpl)]);
 }
 function tplApplySheet(u){
-  const back = () => open({t:'tpl', draft:u.draft});
+  const back = () => open({t:'tpl', sp:u.sp, draft:u.draft});
   return sheet('Update existing pets?', [
     h('p',{style:'margin-top:0'}, plural(u.n,'pet')+' still '+(u.n===1?'has':'have')+' the old starting care. Update '+(u.n===1?'it':'them')+' too?'),
     h('p',{class:'mut'},'Changes start tomorrow. Past days, today and owner reports stay as they were. Pets whose care was changed by hand keep their own.')
-  ], [btn('Only new pets', ()=>finishTpl(u.draft, false), 'b2'), btn('Update '+plural(u.n,'pet'), ()=>finishTpl(u.draft, true))], back);
+  ], [btn('Only new pets', ()=>finishTpl(u.draft, false, u.sp), 'b2'), btn('Update '+plural(u.n,'pet'), ()=>finishTpl(u.draft, true, u.sp))], back);
 }
 // Swap the starting care; optionally move matching pets over from tomorrow
-function finishTpl(draft, applyToPets){
-  const old = S.tpl, from = addDays(today(), 1), td = today();
+function finishTpl(draft, applyToPets, sp = 'dog'){
+  const old = tplFor(sp), from = addDays(today(), 1), td = today();
   if(applyToPets){
     const gone = old.filter(d => !draft.some(n => sameCare(n, d)));    // removed or changed
     const added = draft.filter(n => !old.some(d => sameCare(n, d)));   // new or changed
-    for(const p of onStartingCare(old)){
+    for(const p of onStartingCare(old, sp)){
       for(const d of gone){
         const t = p.plan.find(t => current(t) && sameCare(t, d));
         // care that hasn't started yet just goes; anything older ends today and keeps its history
@@ -2570,7 +2581,7 @@ function finishTpl(draft, applyToPets){
       p.plan.push(...copyPlan(added).map(t => ({...t, from})));
     }
   }
-  S.tpl = draft; U.sh = null; commit();
+  S[spKey(sp)] = draft; U.sh = null; commit();
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
