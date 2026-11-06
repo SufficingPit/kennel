@@ -2089,11 +2089,11 @@ async function flushAnswers(){
     delete Y.reqq[id]; saveSync();
   }
 }
-function answerReq(r, fields){
-  Object.assign(r, fields, {answered_at:new Date().toISOString()});
+function answerReq(r, fields, keepTime){
+  Object.assign(r, fields, keepTime ? {} : {answered_at:new Date().toISOString()});
   if(DEMO){ saveLocal(); return; }
-  const {status, reply, answered_at, stay_id} = r;
-  (Y.reqq ||= {})[r.id] = {status, reply, answered_at, stay_id, answered_by:Y.session.user};
+  const {status, reply, answered_at, stay_id, texted} = r;
+  (Y.reqq ||= {})[r.id] = {status, reply, answered_at, stay_id, texted:texted!==false, answered_by:Y.session.user};
   saveSync(); flushAnswers().catch(() => {});
 }
 
@@ -2123,8 +2123,9 @@ function reqsView(){
     h('div',{class:'pad'},
       !S.book.on && h('div',{class:'warn'},'Online requests are turned off. Turn them on in Settings, Online booking.'),
       R.err && h('p',{class:'err'}, R.err),
+      toText().length > 0 && [h('div',{class:'sec'},'Texts to send'), toText().map(textCard)],
       wait.length ? [h('div',{class:'sec'},'Waiting for you'), wait.map(reqCard)]
-        : h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
+        : !toText().length && h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
       done.length > 0 && [h('div',{class:'sec'},'Answered'), done.map(reqCard)])];
 }
 
@@ -2192,30 +2193,63 @@ function openReqStay(r, cid, groups, made){
 function reqStayBooked(f, sid){
   const r = R.list.find(x => x.id===f.req), made = [...f.made, sid];
   if(f.queue.length) return openReqStay(r, f.client, f.queue, made);
-  answerReq(r, {status:'approved', stay_id:made.join(',')});
+  answerReq(r, {status:'approved', stay_id:made.join(','), texted:false});
   open({t:'reqans', id:r.id, act:'approved'});
 }
 
 // After approving, or to decline: an optional note, and a text ready to send from her phone
+// Texting goes through her own phone: on a phone the Text button opens Messages filled in;
+// on a computer it can't, so the answer waits under Texts to send (r.texted === false).
+const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+function reqMsg(r, ok, note){
+  const names = petList(r.pets.map(p => p.name.trim()));
+  return 'Hi '+firstName(r.name)+', this is '+BIZ+'. '+(ok
+    ? names+(r.pets.length>1 ? ' are' : ' is')+' booked: drop-off '+wmd(r.start_date)+' at '+t12(r.arr)+', pickup '+wmd(r.end_date)+' at '+t12(r.pick)+'.'
+    : 'Sorry, we can’t take '+names+' '+md(r.start_date)+' – '+md(r.end_date)+'.')+((note||'').trim() ? ' '+note.trim() : '');
+}
+const smsLink = (r, body) => 'sms:'+r.phone.replace(/[^\d+]/g,'')+'?&body='+encodeURIComponent(body);
+const copyBtn = (text, label = 'Copy message') => btn(label, e=>{ const b = e.currentTarget;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => { b.textContent = 'Copied'; }, () => { b.textContent = 'Couldn’t copy'; }); }, 'b2');
+const toText = () => R.list.filter(r => (r.status==='approved' || r.status==='declined') && r.texted===false);
+
 function reqAnsSheet(u){
   const r = R.list.find(x => x.id===u.id); if(!r) return null;
-  const names = petList(r.pets.map(p => p.name.trim()));
   const ok = u.act==='approved';
-  const msg = n => 'Hi '+firstName(r.name)+', this is '+BIZ+'. '+(ok
-    ? names+(r.pets.length>1 ? ' are' : ' is')+' booked: drop-off '+wmd(r.start_date)+' at '+t12(r.arr)+', pickup '+wmd(r.end_date)+' at '+t12(r.pick)+'.'
-    : 'Sorry, we can’t take '+names+' '+md(r.start_date)+' – '+md(r.end_date)+'.')+(n.trim() ? ' '+n.trim() : '');
-  const sms = () => 'sms:'+r.phone.replace(/[^\d+]/g,'')+'?&body='+encodeURIComponent(msg(u.note||''));
-  const finish = () => { const note = (u.note||'').trim(); if(ok){ if(note) answerReq(r, {reply:note}); } else answerReq(r, {status:'declined', reply:note || null}); };
-  const back = ok ? () => { finish(); U.tab = 'reqs'; close(); } : () => open({t:'req', id:r.id});
+  const msg = n => reqMsg(r, ok, n);
+  const sms = () => smsLink(r, msg(u.note||''));
+  // texted: true when sent now (or she chose no text), false to keep it under Texts to send
+  const finish = texted => { const note = (u.note||'').trim();
+    if(ok) answerReq(r, {reply:note || r.reply || null, texted}, true); else answerReq(r, {status:'declined', reply:note || null, texted}); };
+  const leave = texted => { finish(texted); U.tab = 'reqs'; close(); };
+  const back = ok ? () => leave(false) : () => open({t:'req', id:r.id});
   return sheet(ok ? 'Booked' : 'Decline request', [
     ok && h('p',{style:'margin-top:0'}, 'The stay'+(r.stay_id && r.stay_id.includes(',') ? 's are' : ' is')+' on the calendar. Let '+firstName(r.name)+' know.'),
     field(ok ? 'Add a note (optional)' : 'Reason or note (optional)', h('textarea',{placeholder:ok ? 'e.g. Bring his food in a labeled bag.' : 'e.g. We’re full that week, but have room the week after.',
       oninput:e=>{ u.note = e.target.value; const p = document.querySelector('.sh .smsprev'); if(p) p.textContent = msg(u.note); }}, u.note||'')),
     h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:12px 0 6px'},'Text message'),
-    h('div',{class:'card smsprev', style:'white-space:pre-wrap'}, msg(u.note||''))
-  ], [ok ? btn('Done', back, 'b2') : btn('Decline, no text', ()=>{ finish(); U.tab = 'reqs'; close(); }, 'b2'),
-      h('a',{class:'b smsgo', style:'display:inline-flex;align-items:center;justify-content:center;text-decoration:none', href:sms(),
-        onclick:e=>{ e.currentTarget.href = sms(); finish(); setTimeout(() => { U.tab = 'reqs'; close(); }, 300); }}, ok ? 'Text them' : 'Decline and text')], back);
+    h('div',{class:'card smsprev', style:'white-space:pre-wrap'}, msg(u.note||'')),
+    !isPhone && h('div',{class:'row start wrap', style:'margin-top:4px'}, h('span',{class:'mut', style:'flex:1;min-width:200px'},
+      'Texts send from your phone. This one will wait under Texts to send, or copy it into Phone Link.'), copyBtn(msg(u.note||'')))
+  ], isPhone
+    ? [ok ? btn('Text later', ()=>leave(false), 'b2') : btn('Decline, no text', ()=>leave(true), 'b2'),
+       h('a',{class:'b smsgo', style:'display:inline-flex;align-items:center;justify-content:center;text-decoration:none', href:sms(),
+         onclick:e=>{ e.currentTarget.href = sms(); finish(true); setTimeout(() => { U.tab = 'reqs'; close(); }, 300); }}, ok ? 'Text them' : 'Decline and text')]
+    : [ok ? btn('Mark sent', ()=>leave(true), 'b2') : btn('Decline, no text', ()=>leave(true), 'b2'),
+       btn(ok ? 'Text from my phone later' : 'Decline, text later', ()=>leave(false))], back);
+}
+
+// one answer still to text
+function textCard(r){
+  const ok = r.status==='approved', body = reqMsg(r, ok, r.reply);
+  const sent = () => { answerReq(r, {texted:true}, true); render(); };
+  return h('div',{class:'card'},
+    h('div',{class:'row'}, h('b',{}, r.name), h('span',{class:'pill'+(ok ? ' ok' : '')}, ok ? 'Booked' : 'Declined')),
+    h('div',{class:'mut', style:'margin:4px 0 8px'}, md(r.start_date)+' – '+md(r.end_date)+' · '+fmtPhone(r.phone)),
+    h('div',{style:'white-space:pre-wrap;font-size:14px;margin-bottom:10px'}, body),
+    h('div',{class:'row start wrap'},
+      isPhone && h('a',{class:'b sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:smsLink(r, body), onclick:()=>setTimeout(sent, 300)}, 'Text'),
+      !isPhone && copyBtn(body, 'Copy'),
+      btn('Mark sent', sent, 'b2 sm')));
 }
 
 // demo: a couple of made-up requests (fake names and 555-01xx numbers)
@@ -2618,7 +2652,7 @@ function render(){
   // "New stay" lives in the middle of the tab bar so it never covers anything on the page
   const newDay = U.tab==='today' ? (U.day||today()) : U.range ? (U.range.start<=today() && today()<=U.range.end ? today() : U.range.start)
     : (U.wk<=today() && today()<=addDays(U.wk,6) ? today() : U.wk);
-  const nReq = reqWaiting().length;
+  const nReq = reqWaiting().length + toText().length;
   const tab = ([k,n]) => h('button',{class:U.tab===k?'on':'', 'aria-current':U.tab===k?'page':false, onclick:()=>{ if(k==='today' && U.tab!=='today') U.day=null; if(k==='reqs') loadRequests(); U.tab=k; U.sh=null; render(); scrollTo(0,0); }},
       h('span',{html:ICONS[k], style:'display:flex;position:relative'}, k==='reqs' && nReq ? h('span',{class:'bdg', 'aria-label':nReq+' waiting'}, nReq) : null), n);
   const tabs = h('nav',{class:'tabs'},
