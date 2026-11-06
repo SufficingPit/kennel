@@ -775,7 +775,7 @@ function calView(){
   const hereNow = S.kennels.filter(k => S.stays.some(s=>s.kennel===k.id && s.status==='in'));
   // the filter only means something while today is in view; other dates show every kennel
   const showsToday = w<=td && td<=end;
-  const kf = showsToday ? (S.kf || 'all') : 'all';
+  const kf = showsToday ? (S.kf || 'week') : 'all';
   const shown = kf==='week' ? inView : kf==='now' ? hereNow : S.kennels;
   const rows = shown.map(k => {
     const lane = h('div',{class:'lane'},
