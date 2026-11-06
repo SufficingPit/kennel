@@ -216,7 +216,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 create or replace function public.request_cancel(p_token uuid) returns boolean
 language sql volatile security definer set search_path = public as $$
-  update requests set status = 'cancelled', answered_at = now() where token = p_token and status in ('pending','approved') returning true
+  update requests set status = 'cancelled', answered_at = now() where token = p_token and status = 'pending' returning true
 $$;
 
 -- Only the public entry points are callable without a login
