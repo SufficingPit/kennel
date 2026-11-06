@@ -144,6 +144,15 @@ body.typing .sh>.ft{position:static;border-top:0}
 .wheels .colon{position:relative;line-height:220px;font-size:22px;font-weight:700}
 .wheel{position:relative;width:76px;height:220px;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);overscroll-behavior:contain}
 .wheel::-webkit-scrollbar{display:none}
+.cal-hd{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 4px}
+.cal-hd b{font-size:17px}
+.cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-bottom:8px}
+.cal-g .wd{font-size:12px;font-weight:600;color:var(--mut);padding:2px 0 6px}
+.cal-g button{min-height:44px;border:0;background:none;border-radius:10px;font-size:16px;color:var(--ink)}
+.cal-g button.in{background:var(--pri-soft)}
+.cal-g button.td{box-shadow:inset 0 0 0 1.5px var(--pri);font-weight:700}
+.cal-g button.on{background:var(--pri);color:var(--onp);font-weight:700}
+.cal-g button:disabled{color:var(--field)}
 .wheel .sp{height:90px}
 .wheel .wi{height:40px;line-height:40px;text-align:center;font-size:20px;scroll-snap-align:center;color:var(--mut);cursor:pointer}
 .wheel .wi.sel{color:var(--ink);font-weight:700;font-size:23px}
@@ -564,6 +573,49 @@ function timePickerView(pk){
         btn('Set '+'time', ()=>finish(val())))));
 }
 
+// Date picker: a month grid (tap a day) for bookings, or month/day/year wheels for birth dates.
+// opts: wheels, min (no earlier day), span [from,to] shaded on the grid
+function pickDate(title, value, onSet, opts={}){
+  openPick({kind:'date', title, value:value||'', onSet, ...opts});
+}
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const daysIn = (y, m) => new Date(y, m, 0).getDate();   // m is 1-12
+function datePickerView(pk){
+  const finish = v => { const fn = pk.onSet; U.pk = null; fn(v); render(); };
+  let body, foot;
+  if(pk.wheels){
+    const yNow = +today().slice(0,4), base = pk.value || (yNow-3)+today().slice(4);   // a blank birth date starts a few years back
+    const st = pk.st || (pk.st = {y:+base.slice(0,4), m:+base.slice(5,7), d:+base.slice(8,10)});
+    const val = () => st.y+'-'+pad2(st.m)+'-'+pad2(Math.min(st.d, daysIn(st.y, st.m)));
+    const years = [...Array(31)].map((_,i)=>[yNow-30+i, String(yNow-30+i)]);
+    body = h('div',{class:'wheels'}, h('div',{class:'band'}),
+      wheel(MONTHS.map((n,i)=>[i+1, n.slice(0,3)]), st.m, v=>st.m=v, 'Month'),
+      wheel([...Array(31)].map((_,i)=>[i+1, String(i+1)]), st.d, v=>st.d=v, 'Day'),
+      wheel(years, st.y, v=>st.y=v, 'Year'));
+    foot = [btn('Cancel', closePick, 'b2'), btn('Set date', ()=>finish(val()))];
+  } else {
+    const st = pk.st || (pk.st = {mo:(pk.value || today()).slice(0,7)});
+    const y = +st.mo.slice(0,4), m = +st.mo.slice(5,7), first = st.mo+'-01';
+    const step = n => { const d = new Date(y, m-1+n, 1); st.mo = d.getFullYear()+'-'+pad2(d.getMonth()+1); render(); };
+    const td = today(), [a, b] = pk.span || [];
+    const cells = [...Array(parseD(first).getDay())].map(() => h('span'));
+    for(let d=1; d<=daysIn(y,m); d++){
+      const D = st.mo+'-'+pad2(d);
+      cells.push(h('button',{class:(D===pk.value?'on ':'')+(D===td?'td ':'')+(a && b && D>=a && D<=b ? 'in' : ''),
+        disabled:!!(pk.min && D<pk.min), 'aria-label':longDay(D), 'aria-pressed':D===pk.value?'true':'false', onclick:()=>finish(D)}, d));
+    }
+    body = [h('div',{class:'cal-hd'},
+        btn('‹', ()=>step(-1), 'ic', {'aria-label':'Previous month'}), h('b',{}, MONTHS[m-1]+' '+y), btn('›', ()=>step(1), 'ic', {'aria-label':'Next month'})),
+      h('div',{class:'cal-g'}, ['S','M','T','W','T','F','S'].map(w => h('span',{class:'wd'}, w)), cells)];
+    foot = [btn('Cancel', closePick, 'b2'), btn('Today', ()=>finish(td), 'b', {disabled:!!(pk.min && td<pk.min)})];
+  }
+  return h('div',{class:'ov pk', onclick:e=>{ if(e.target===e.currentTarget) closePick(); }},
+    h('div',{class:'sh', role:'dialog', 'aria-label':pk.title},
+      h('div',{class:'hd'}, h('h1',{}, pk.title), btn('×', closePick, 'ic', {'aria-label':'Close'})),
+      body, h('div',{class:'ft'}, foot)));
+}
+const ymd = s => parseD(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
 // List picker: searchable, used for families, kennels and care types.
 // items(q) -> [{id,label,sub,on,swatch}]; onPick(id); action: {label:q=>text, fn:q=>{}}
 function pickList(pk){ openPick({kind:'list', q:'', ...pk}); }
@@ -789,8 +841,8 @@ function rangeSheet(u){
     h('div',{class:'chips', style:'margin-top:0'}, presets.map(([l,r]) => chip(l, false, ()=>apply(r)))),
     h('div',{class:'sec'},'Custom'),
     h('div',{class:'row'},
-      field('From', inp(f.start, v=>{ f.start=v; if(f.end<v) f.end=v; render(); }, {type:'date'})),
-      field('To', inp(f.end, v=>{ f.end=v; render(); }, {type:'date'}))),
+      field('From', fieldBtn(f.start && wmd(f.start), 'Start', ()=>pickDate('From', f.start, v=>{ f.start=v; if(!f.end || f.end<v) f.end=v; }, {span:[f.start, f.end]}))),
+      field('To', fieldBtn(f.end && wmd(f.end), 'End', ()=>pickDate('To', f.end, v=>{ f.end=v; }, {min:f.start, span:[f.start, f.end]})))),
     !err && h('p',{class:'mut', style:'margin-top:-4px'}, plural(n,'day'))
   ], [err && f.start && f.end ? h('div',{class:'err'}, err) : null, btn('Cancel', close, 'b2'),
       btn('Show these dates', ()=>{ if(err) return; apply(n===7 && parseD(f.start).getDay()===0 ? null : {start:f.start, end:f.end}); if(n===7 && parseD(f.start).getDay()===0){ U.wk=f.start; render(); } }, 'b', {disabled:!!err})]);
@@ -1012,10 +1064,10 @@ function stayForm(u){
       c.pets.map(p => chip((f.pets.includes(p.id)?'✓ ':'')+p.name, f.pets.includes(p.id), ()=>{ f.pets = f.pets.includes(p.id) ? f.pets.filter(x=>x!==p.id) : [...f.pets, p.id]; u.err=''; render(); })),
       chip('+ Pet', false, ()=>openNewPet(c, u, true), 'add'))),
     h('div',{class:'row'},
-      field('Drop-off', inp(f.start, v=>{ f.start=v; if(f.end<v) f.end=v; render(); }, {type:'date', 'aria-label':'Drop-off day'})),
+      field('Drop-off', fieldBtn(f.start && wmd(f.start), 'Day', ()=>pickDate('Drop-off day', f.start, v=>{ f.start=v; if(f.end<v) f.end=v; }, {span:[f.start, f.end]}))),
       h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.arr), 'Time', ()=>pickTime('Drop-off time', f.arr, v=>f.arr=v)))),
     h('div',{class:'row'},
-      field('Pickup', inp(f.end, v=>{ f.end=v; render(); }, {type:'date', 'aria-label':'Pickup day'})),
+      field('Pickup', fieldBtn(f.end && wmd(f.end), 'Day', ()=>pickDate('Pickup day', f.end, v=>{ f.end=v; }, {min:f.start, span:[f.start, f.end]}))),
       h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.pick), 'Time', ()=>pickTime('Pickup time', f.pick, v=>f.pick=v)))),
     nights>=0 && f.end>=f.start && h('p',{class:'mut', style:'margin:-4px 0 12px'}, nights ? plural(nights,'night') : 'Same-day stay'),
     field('Kennel', fieldBtn(kennel(f.kennel).name, 'Choose a kennel', ()=>pickKennel(u), hit ? 'taken: '+petNames(hit) : 'free')),
@@ -1156,7 +1208,7 @@ function clientSheet(u){
     tf(c,'pickupBy','Names',sv,{ph:'Besides the owners'}),
     h('div',{class:'sec'},'Waiver'),
     field('Date signed', h('div',{class:'row'},
-      h('input',{type:'date', value:c.signed||'', 'aria-label':'Waiver signed date', onchange:e=>{ c.signed=e.target.value; isNew ? render() : commit(); }}),
+      fieldBtn(c.signed && ymd(c.signed), 'Not signed', ()=>pickDate('Waiver signed', c.signed, v=>{ c.signed=v; if(!isNew) save(); })),
       !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
     h('div',{class:'sec'},'Notes'),
     h('textarea',{'aria-label':'Notes', onchange:e=>{ c.notes=e.target.value.trim(); if(!isNew) commit(); }}, c.notes||''),
@@ -1217,7 +1269,7 @@ function petSheet(u){
     p.species==='other' && tf(p,'other','What kind?',save,{ph:'e.g. Rabbit, Guinea pig'}),
     group(g('p-basic'),'Details', join(p.breed, p.color, p.sex==='m'?'Male':p.sex==='f'?'Female':'', p.fixed==='yes'?(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Fixed'):'', p.dob && ageOf(p.dob)), [
       two(tf(p,'breed','Breed',save), tf(p,'color','Color',save)),
-      field('Date of birth', inp(p.dob, v=>{ p.dob=v; commit(); }, {type:'date'})),
+      field('Date of birth', fieldBtn(p.dob && ymd(p.dob), 'Not set', ()=>pickDate('Date of birth', p.dob, v=>{ p.dob=v; save(); }, {wheels:true}))),
       field('Sex', seg([['m','Male'],['f','Female']], p.sex, v=>{ p.sex = p.sex===v?'':v; commit(); })),
       field(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Spayed / neutered', yesNo(p,'fixed'))]),
     group(g('p-health'),'Health & vaccines', join(p.conditions, vaxSummary(p)), [
@@ -1411,7 +1463,7 @@ function render(){
   const fab = null;
   const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
   if(U.sh && !sh) U.sh = null;
-  const pk = U.pk && (U.pk.kind==='time' ? timePickerView(U.pk) : U.pk.kind==='color' ? colorPickerView(U.pk) : listPickerView(U.pk));
+  const pk = U.pk && (U.pk.kind==='time' ? timePickerView(U.pk) : U.pk.kind==='color' ? colorPickerView(U.pk) : U.pk.kind==='date' ? datePickerView(U.pk) : listPickerView(U.pk));
   app.replaceChildren(...[view, fab, tabs, sh, pk].flat(Infinity).filter(x=>x && x.nodeType));
   document.body.style.overflow = (sh||pk) ? 'hidden' : '';
 
