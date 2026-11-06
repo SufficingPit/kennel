@@ -167,7 +167,7 @@ body.typing .sh>.ft{position:static;border-top:0}
 .paper .day{margin:10px 0 2px;font-weight:700}
 .paper .pl{margin-left:10px}
 .paper .box{display:inline-block;width:12px;height:12px;border:1.5px solid #555;border-radius:2px;margin-right:6px;vertical-align:-1px}
-.paper .msg{white-space:pre-wrap;background:#F3F7F6;border-radius:8px;padding:10px 12px;margin-top:6px}
+.paper .msg{white-space:pre-wrap;border:1px solid #9CA3AF;border-radius:8px;padding:10px 12px;margin-top:6px}
 #print{display:none}
 @media print{
   @page{margin:14mm}
@@ -421,7 +421,7 @@ const statusColor = s => s.status==='out' ? (s.paid ? '#4B5563' : '#B45309') : s
 const statusText = s => s.status==='out' ? (s.paid ? 'Out, paid' : 'Out, unpaid') : STATUS[s.status];
 
 /* vaccines: the owner confirms they're up to date (yes/no), as on the intake waiver */
-const vaxSummary = p => p.vaxOk==='yes' ? 'Vaccines up to date' : p.vaxOk==='no' ? 'Vaccines NOT up to date' : 'Vaccines not confirmed';
+const vaxSummary = p => p.vaxOk==='yes' ? 'Vaccines up to date' : p.vaxOk==='no' ? 'Vaccines not up to date' : 'Vaccines not confirmed';
 const vaxWarn = p => p.vaxOk==='yes' ? '' : p.vaxOk==='no' ? 'Vaccines not up to date' : 'Vaccines not confirmed';
 
 /* ---------- DOM helpers ---------- */
@@ -937,7 +937,6 @@ function settingsView(){
       planEditor(S.tpl),
 
       h('div',{class:'sec'},'Backup'),
-      h('p',{class:'mut', style:'margin-top:0'},'This prototype saves only in this browser. Export a backup now and then.'),
       h('div',{class:'row start wrap'},
         btn('Export backup', exportData, 'b2 sm'),
         h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, 'Import backup',
@@ -1042,7 +1041,7 @@ function petFacts(p){
     line('Treats:', p.treats==='yes' ? 'Yes'+(p.treatFav?', especially '+p.treatFav:'') : p.treats==='no' ? 'No, on a diet' : ''),
     line('Personality:', p.personality.join(', ')),
     line('Gets along with:', p.along.join(', ')),
-    line('Likes:', p.likes), line('Dislikes:', p.dislikes), line('Also:', p.notes)
+    line('Likes:', p.likes), line('Dislikes:', p.dislikes), line('Notes:', p.notes)
   ].filter(Boolean);
   return facts.length ? h('div',{class:'card', style:'font-size:14px'}, facts) : null;
 }
@@ -1059,7 +1058,7 @@ function stayDetail(u){
       h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
       h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
       c && h('button',{class:'lk', style:'padding:0;margin-top:4px', onclick:()=>open({t:'client',id:c.id})}, c.name+' family'+(bestPhone(c)?' · '+bestPhone(c):'')+' ›'),
-      s.belongings && h('div',{style:'margin-top:4px'}, h('b',{},'Brought '), s.belongings),
+      s.belongings && h('div',{style:'margin-top:4px'}, h('b',{},'Brought: '), s.belongings),
       s.notes && h('div',{style:'margin-top:6px'}, s.notes)),
     warns,
     h('div',{class:'row wrap start'},
@@ -1215,7 +1214,7 @@ function petSheet(u){
       onchange:e=>{ if(isNew) return; if(e.target.value.trim()){ p.name=e.target.value.trim(); commit(); } else { e.target.value=p.name; } }})),
     field('Species', seg([['dog','Dog'],['cat','Cat'],['other','Small mammal']], p.species||'dog', v=>{ p.species=v; commit(); })),
     p.species==='other' && tf(p,'other','What kind?',save,{ph:'e.g. Rabbit, Guinea pig'}),
-    group(g('p-basic'),'Details', join(p.breed, p.color, p.sex==='m'?'Male':p.sex==='f'?'Female':'', p.fixed==='yes'?(p.sex==='f'?'Spayed':'Fixed'):'', p.dob && ageOf(p.dob)), [
+    group(g('p-basic'),'Details', join(p.breed, p.color, p.sex==='m'?'Male':p.sex==='f'?'Female':'', p.fixed==='yes'?(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Fixed'):'', p.dob && ageOf(p.dob)), [
       two(tf(p,'breed','Breed',save), tf(p,'color','Color',save)),
       field('Date of birth', inp(p.dob, v=>{ p.dob=v; commit(); }, {type:'date'})),
       field('Sex', seg([['m','Male'],['f','Female']], p.sex, v=>{ p.sex = p.sex===v?'':v; commit(); })),
