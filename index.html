@@ -289,6 +289,13 @@ function copyPlan(pl){ return pl.map(t => ({...t, id:uid('t'), times:[...t.times
 // so past days, check-offs and owner reports keep showing what was actually scheduled.
 const activeOn = (t, D) => (!t.from || D >= t.from) && (!t.until || D <= t.until);
 const current = t => !t.until;   // what's shown and edited: care that hasn't been ended
+// The version of a care item in effect on day D, or null when it isn't scheduled then.
+// Edits keep the earlier version in t.hist as {until, tag, times, note, pet}, oldest first.
+function versionOn(t, D){
+  if(!activeOn(t, D)) return null;
+  for(const v of t.hist || []) if(D <= v.until) return v;
+  return t;
+}
 // Fields follow the Little Village Pet Lodge intake form.
 const CLIENT_DEF = {first:'', name:'', email:'', cell:'', phone:'', work:'', city:'', state:'', zip:'',
   coName:'', coMain:'', coAlt:'', emName:'', emMain:'', emAlt:'', vet:'', vetPhone:'', pickupBy:'', signed:'', notes:''};
@@ -675,25 +682,33 @@ function group(id, title, summary, body, opts={}){
 const join = (...a) => a.flat().filter(Boolean).join(' · ');
 
 /* ---------- care-plan editor (default plan, each pet's plan, and stay extras) ---------- */
-function planEditor(plan, pets){
+// dated: a pet's or a stay's care, where edits apply from today and earlier days keep what was scheduled
+// (the starting care has no history, so it's edited in place)
+function planEditor(plan, pets, dated){
+  const td = today(), yday = addDays(td, -1);
   const nextTime = t => { const last = t.times[t.times.length-1]; return last ? pad2(Math.min(21, +last.slice(0,2)+4))+':00' : '08:00'; };
+  const used = t => dated && (!t.from || t.from < td);   // it was on the schedule before today
+  // before the first change of the day, remember how it was for the days before today
+  const keepPast = t => { if(!used(t)) return; const hs = t.hist ||= [];
+    if(!hs.length || hs[hs.length-1].until !== yday) hs.push({until:yday, tag:t.tag, times:[...t.times], note:t.note||'', pet:t.pet||''}); };
+  const edit = (t, fn, redraw) => { keepPast(t); fn(); redraw ? commit() : save(); };
   return h('div',{},
-    plan.filter(current).map(t => { const tg = tag(t.tag), i = plan.indexOf(t);
+    plan.filter(current).map(t => { const tg = tag(t.tag);
       return h('div',{class:'card st', style:'border-left-color:'+tg.color},
         h('div',{class:'row'},
-          h('button',{class:'chip', onclick:()=>pickTag(t.tag, id=>{ t.tag=id; save(); })}, h('span',{class:'sw', style:'margin:0;border-radius:50%;background:'+tg.color}), tg.name, h('span',{class:'mut'},' ▾')),
-          btn('Remove', ()=>{ plan.splice(i,1); commit(); }, 'lk bad')),
+          h('button',{class:'chip', onclick:()=>pickTag(t.tag, id=>edit(t, ()=>{ t.tag=id; }))}, h('span',{class:'sw', style:'margin:0;border-radius:50%;background:'+tg.color}), tg.name, h('span',{class:'mut'},' ▾')),
+          btn('Remove', ()=>{ used(t) ? (t.until = yday) : plan.splice(plan.indexOf(t),1); commit(); }, 'lk bad')),
         pets && pets.length>1 && h('div',{class:'chips'},
-          [{id:'',name:'All pets'}, ...pets].map(p => chip(p.name, (t.pet||'')===p.id, ()=>{ t.pet=p.id; commit(); }))),
+          [{id:'',name:'All pets'}, ...pets].map(p => chip(p.name, (t.pet||'')===p.id, ()=>edit(t, ()=>{ t.pet=p.id; }, true)))),
         h('div',{class:'chips'},
           t.times.map((tm,j) => h('span',{class:'chip tchip'},
-            h('button',{'aria-label':'Change '+t12(tm), onclick:()=>pickTime('Change time', tm, v=>{ t.times[j]=v; t.times=[...new Set(t.times)].sort(); save(); })}, t12(tm)),
-            h('button',{class:'cx', 'aria-label':'Remove '+t12(tm), onclick:()=>{ t.times.splice(j,1); commit(); }},'×'))),
-          chip('+ Time', false, ()=>pickTime('Add a time', nextTime(t), v=>{ if(!t.times.includes(v)) t.times.push(v); t.times.sort(); save(); }), 'add')),
+            h('button',{'aria-label':'Change '+t12(tm), onclick:()=>pickTime('Change time', tm, v=>edit(t, ()=>{ t.times[j]=v; t.times=[...new Set(t.times)].sort(); }))}, t12(tm)),
+            h('button',{class:'cx', 'aria-label':'Remove '+t12(tm), onclick:()=>edit(t, ()=>{ t.times.splice(j,1); }, true)},'×'))),
+          chip('+ Time', false, ()=>pickTime('Add a time', nextTime(t), v=>edit(t, ()=>{ if(!t.times.includes(v)) t.times.push(v); t.times.sort(); })), 'add')),
         !t.times.length && h('div',{class:'mut', style:'margin-bottom:8px'},'No set time, so it shows as a standing note.'),
-        inp(t.note, v=>{ t.note=v; save(); }, {'aria-label':'Note', placeholder:'Note (amount, instructions)'}));
+        inp(t.note, v=>edit(t, ()=>{ t.note=v; }), {'aria-label':'Note', placeholder:'Note (amount, instructions)'}));
     }),
-    btn('+ Add care', ()=>pickTag(null, id=>{ const t = task(id,[],''); plan.push(t); save();
+    btn('+ Add care', ()=>pickTag(null, id=>{ const t = task(id,[],''); if(dated) t.from = td; plan.push(t); save();
       setTimeout(()=>pickTime(tag(id).name+': first time', '08:00', v=>{ t.times=[v]; save(); }), 0); }), 'chip add'));
 }
 const planReadOnly = plan => plan.filter(current).length ? plan.filter(current).map(t => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
@@ -706,11 +721,18 @@ function tasksFor(s, D){
   const out = [];
   for(const pid of s.pets){
     const x = findPet(pid); if(!x) continue;
-    const list = x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => activeOn(t, D));
-    for(const t of list) for(const tm of t.times){
-      if(D===s.start && tm < s.arr) continue;   // before drop-off
-      if(D===s.end && tm > s.pick) continue;    // after pickup
-      out.push({s, p:x.p, c:x.c, t, tm, key:[s.id,pid,t.id,D,tm].join('|'), D});
+    const forPet = v => !v.pet || v.pet===pid;
+    for(const t of x.p.plan.concat(s.extra)){
+      const v = versionOn(t, D), key = tm => [s.id,pid,t.id,D,tm].join('|');
+      const times = new Set(v && forPet(v) ? v.times : []);
+      // a check-off never disappears: times checked off under an earlier or ended version still show
+      for(const old of [...(t.hist || []), t]) if(forPet(old)) for(const tm of old.times) if(S.log[key(tm)]) times.add(tm);
+      const view = v && v!==t ? {...t, tag:v.tag, note:v.note, pet:v.pet} : t;
+      for(const tm of times){
+        if(D===s.start && tm < s.arr) continue;   // before drop-off
+        if(D===s.end && tm > s.pick) continue;    // after pickup
+        out.push({s, p:x.p, c:x.c, t:view, tm, key:key(tm), D});
+      }
     }
   }
   return out.sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : 0);
@@ -924,7 +946,7 @@ function dayView(){
   const lateN = items.filter(isLate).length;
   // care with no set time: a standing note for the whole stay, shown above the to-do list
   const notes = staysOn(D).filter(s=>s.status==='in').flatMap(s => s.pets.flatMap(pid => { const x = findPet(pid); if(!x) return [];
-    return x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => !t.times.length && activeOn(t, D) && liveTag(tag(t.tag))).map(t => ({s, p:x.p, c:x.c, t})); }))
+    return x.p.plan.concat(s.extra).map(t => versionOn(t, D)).filter(v => v && !v.times.length && (!v.pet || v.pet===pid) && liveTag(tag(v.tag))).map(t => ({s, p:x.p, c:x.c, t})); }))
     .sort((a,b) => kennelOrder(a.s,b.s));
 
   const stayLine = (s, action) => h('div',{class:'card row'},
@@ -1155,7 +1177,7 @@ function stayDetail(u){
     pets.map(p => [h('div',{class:'sec'}, p.name, btn('Edit pet', ()=>open({t:'pet', id:p.id, back:u}), 'lk')),
       petFacts(p), planReadOnly(p.plan)]),
     h('div',{class:'sec'},'Extra care for this stay only'),
-    planEditor(s.extra, pets),
+    planEditor(s.extra, pets, true),
     h('div',{style:'margin:24px 0 8px'}, btn('Delete stay', ()=>confirmSheet('Delete this stay?', petNames(s)+' in '+kennel(s.kennel).name+', '+md(s.start)+' – '+md(s.end)+'. Its check-offs are removed too.', 'Delete', ()=>{
       S.stays = S.stays.filter(x=>x!==s); for(const k in S.log) if(k.startsWith(s.id+'|')) delete S.log[k];
     }, u), 'lk bad'))
@@ -1325,8 +1347,8 @@ function petSheet(u){
     group(g('p-flags'),'Behavior', petFlags(p).filter(f=>f!=='Medical').join(', ') || (FLAGS.every(([k])=>p[k]==='no') ? 'No concerns' : ''), [
       FLAGS.map(([k,l]) => flagRow(k, l))], {pill: FLAGS.some(([k])=>p[k]==='yes') && h('span',{class:'pill bad'},'!')}),
     h('div',{class:'sec'},'Care schedule'),
-    h('p',{class:'mut', style:'margin-top:0'},'Feeding, potty breaks and meds. For meds, put the name, dose and instructions in the note.'),
-    planEditor(p.plan),
+    h('p',{class:'mut', style:'margin-top:0'},'Feeding, potty breaks and meds. For meds, put the name, dose and instructions in the note. Changes apply from today; earlier days keep what was scheduled.'),
+    planEditor(p.plan, null, true),
     !isNew && h('div',{style:'margin:24px 0 8px'}, saved
       ? btn('Delete '+p.name, ()=>confirmSheet('Delete '+p.name+'?', 'Removes '+p.name+' from their stays. Stays left with no pets are deleted.', 'Delete', ()=>{
           c.pets = c.pets.filter(y=>y!==p);
@@ -1359,14 +1381,18 @@ function tagSheet(u){
 
 function delTagSheet(u){
   const t = S.tags.find(x=>x.id===u.id); if(!t) return null;
-  const plans = [S.tpl, ...S.clients.flatMap(c=>c.pets.map(p=>p.plan)), ...S.stays.map(s=>s.extra)];
-  const n = plans.reduce((a,pl)=>a + pl.filter(x=>x.tag===t.id).length, 0);
+  const dated = [...S.clients.flatMap(c=>c.pets.map(p=>p.plan)), ...S.stays.map(s=>s.extra)];
+  const n = [S.tpl, ...dated].reduce((a,pl)=>a + pl.filter(x=>x.tag===t.id && current(x)).length, 0);
   const back = () => open({t:'tag', id:t.id});
   return sheet('Delete “'+t.name+'”?', [
-    h('p',{}, (n ? 'It will be taken off the '+plural(n,'schedule')+' that use it. ' : '')+'Past check-offs still show it.'),
+    h('p',{}, (n ? 'It comes off the '+plural(n,'schedule')+' that use it from today. ' : '')+'Earlier days and check-offs still show it.'),
     n>0 && h('p',{class:'mut'},'To keep it on those schedules but stop using it for new care, archive it instead.')
   ], [btn('Cancel', back, 'b2'), n>0 && btn('Archive', ()=>{ t.arch=true; U.sh=null; commit(); }, 'b2'), btn('Delete', ()=>{
-        plans.forEach(pl=>{ for(let i=pl.length-1;i>=0;i--) if(pl[i].tag===t.id) pl.splice(i,1); });
+        const td = today();
+        S.tpl = S.tpl.filter(x=>x.tag!==t.id);
+        // on pets and stays it ends yesterday, so earlier days keep it; care that only started today just goes
+        dated.forEach(pl=>{ for(let i=pl.length-1;i>=0;i--){ const x = pl[i]; if(x.tag!==t.id || !current(x)) continue;
+          if(x.from && x.from >= td) pl.splice(i,1); else x.until = addDays(td,-1); } });
         t.del = true;   // kept (hidden) so old records still know what it was
         U.sh=null; commit();
       }, 'b bd')], back);
