@@ -94,6 +94,26 @@ a.chip{text-decoration:none;color:var(--ink)}
 .tabs .newtab .plus{width:34px;height:26px;border-radius:13px;background:var(--pri);color:var(--onp);font-size:22px;line-height:25px;font-weight:600;display:block}
 /* while typing, sheet buttons stop floating over the keyboard and just sit at the end */
 body.typing .sh>.ft{position:static;border-top:0}
+/* computer screens: tabs become a rail on the left, the calendar and Today use the
+   width, lists stay at a readable width, and sheets open as centered dialogs */
+@media (min-width:900px){
+  body{padding-left:92px}
+  #app{max-width:760px;padding-bottom:32px}
+  #app[data-tab=cal],#app[data-tab=today]{max-width:1400px;padding:0 12px 32px}
+  #app[data-tab=signin]{max-width:560px}
+  body:has(#app[data-tab=signin]){padding-left:0}
+  .tabs{top:0;bottom:0;right:auto;width:92px;max-width:none;margin:0;flex-direction:column;justify-content:flex-start;gap:4px;padding:14px 0;border-top:0;border-right:1px solid var(--line)}
+  .tabs button{flex:none;min-height:68px;border-radius:12px;margin:0 8px}
+  .tabs button:hover{background:var(--row)}
+  .tabs .newtab{order:-1;margin-bottom:10px}
+  .kr{height:48px}
+  .kseg{max-width:480px;margin-left:auto;margin-right:auto}
+  .ov{align-items:center;padding:24px}
+  .sh{max-width:620px;max-height:88vh;border-radius:18px;padding:0 22px}
+  .sh>.ft{padding-bottom:16px}
+  button.card:hover,.pitem:hover{outline:1px solid var(--field)}
+  .chip:hover,.b2:hover{border-color:var(--mut)}
+}
 /* week grid */
 .wk{position:relative}
 .wh{display:flex;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:4}
@@ -2189,6 +2209,7 @@ function fitMarquees(root = document){
 let lastSheet = null;
 function render(){
   const app = document.getElementById('app');
+  app.dataset.tab = needsSignIn() ? 'signin' : U.tab;
   const oldSh = app.querySelector('.ov:not(.pk) .sh'), shTop = oldSh ? oldSh.scrollTop : 0;
   const oldTl = app.querySelector('.tl'), tlLeft = oldTl ? oldTl.scrollLeft : null, tlDay = oldTl?.dataset.day;
   AFTER.length = 0;
