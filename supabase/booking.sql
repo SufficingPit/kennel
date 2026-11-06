@@ -34,6 +34,9 @@ create table if not exists public.requests (
   token       uuid not null default gen_random_uuid() unique   -- the customer's status link
 );
 create index if not exists requests_open on public.requests (status, start_date);
+-- the page sends a fresh key with each request, so a double tap or a resend after a dropped
+-- connection gives back the same request instead of making a second one
+alter table public.requests add column if not exists client_key uuid unique;
 
 -- Staff (signed in) read and answer requests. Nobody deletes. The public gets nothing
 -- directly, only the functions.
@@ -137,7 +140,7 @@ end $$;
 -- What the public page needs to draw itself: hours, fee, rules
 create or replace function public.booking_info() returns jsonb
 language sql stable security definer set search_path = public as $$
-  select jsonb_build_object('on', coalesce((b->>'on')::boolean, false), 'offNote', b->'offNote', 'hours', b->'hours', 'fee', b->'fee',
+  select jsonb_build_object('on', coalesce((b->>'on')::boolean, false), 'offNote', b->'offNote', 'hours', b->'hours', 'fee', b->'fee', 'eveFee', b->'eveFee', 'eveFrom', b->'eveFrom',
     'minN', b->'minN', 'lead', b->'lead', 'ahead', b->'ahead', 'today', book_today(b))
   from (select book_rules() b) x
 $$;
@@ -151,6 +154,10 @@ declare b jsonb := book_rules(); c jsonb; s date; e date; nd int; nc int; ds int
 begin
   -- one at a time, so two people can't both take the last spot
   perform pg_advisory_xact_lock(hashtext('request_spot'));
+  if coalesce(p->>'key','') ~ '^[0-9a-fA-F-]{36}$' then
+    select token into t from requests where client_key = (p->>'key')::uuid;
+    if t is not null then return jsonb_build_object('ok', true, 'token', t); end if;
+  end if;
   begin s := (p->>'start')::date; e := (p->>'end')::date;
   exception when others then return jsonb_build_object('ok', false, 'reason', 'Pick your dates.'); end;
   c := booking_check(s, e);
@@ -178,9 +185,10 @@ begin
   if (select count(*) from requests where created_at > now() - interval '1 hour') >= 20 then
     return jsonb_build_object('ok', false, 'reason', 'We’re getting a lot of requests right now. Please call us.'); end if;
 
-  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes)
+  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes, client_key)
   values (s, e, p->>'arr', p->>'pick', ds, cs, trim(p->>'name'), trim(p->>'phone'), nullif(trim(coalesce(p->>'email','')),''),
-          p->'pets', coalesce((p->>'share')::boolean, true), nullif(trim(coalesce(p->>'notes','')),''))
+          p->'pets', coalesce((p->>'share')::boolean, true), nullif(trim(coalesce(p->>'notes','')),''),
+          case when coalesce(p->>'key','') ~ '^[0-9a-fA-F-]{36}$' then (p->>'key')::uuid end)
   returning token into t;
   return jsonb_build_object('ok', true, 'token', t);
 end $$;
@@ -201,4 +209,8 @@ $$;
 -- Only the public entry points are callable without a login
 revoke execute on function public.book_rules(), public.book_today(jsonb), public.book_kennels(jsonb), public.book_stays(), public.book_holds(jsonb) from public, anon, authenticated;
 grant execute on function public.booking_days(date, date), public.booking_check(date, date), public.booking_info(),
-  public.request_spot(jsonb), public.request_status(uuid), public.request_cancel(uuid) to anon, authenticated;
+  public.request_status(uuid), public.request_cancel(uuid) to anon, authenticated;
+-- Sending a request goes through the request-spot server function, which runs the
+-- spam check first; only that function (with the secret key) may call request_spot.
+revoke execute on function public.request_spot(jsonb) from public, anon, authenticated;
+grant execute on function public.request_spot(jsonb) to service_role;
