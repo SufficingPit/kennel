@@ -9,7 +9,7 @@
 -- A spot is one kennel free for every night of the stay. A night is the date a pet
 -- sleeps there: a stay from Nov 10 to Nov 15 uses the nights of Nov 10 through 14,
 -- so the kennel can take a new arrival on Nov 15. Pending requests hold their spots
--- until answered or until book.hold hours pass.
+-- until answered, or (when book.auto > 0) until that many hours pass, when it counts as declined.
 
 create table if not exists public.requests (
   id          uuid primary key default gen_random_uuid(),
@@ -87,7 +87,7 @@ $$;
 create or replace function public.book_holds(b jsonb) returns setof requests
 language sql stable security definer set search_path = public as $$
   select * from requests where status='pending'
-    and created_at > now() - make_interval(hours => coalesce((b->>'hold')::int, 48))
+    and (coalesce((b->>'auto')::int, 0) <= 0 or created_at > now() - make_interval(hours => (b->>'auto')::int))
 $$;
 
 -- Open spots for every night from p_from up to (not including) p_to, for the public calendar
@@ -196,10 +196,14 @@ end $$;
 -- The customer's status page and cancel button, by the token in their link
 create or replace function public.request_status(p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
-  select jsonb_build_object('status',
-      case when r.status='pending' and r.created_at <= now() - make_interval(hours => coalesce((book_rules()->>'hold')::int, 48)) then 'expired' else r.status end,
-    'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets, 'reply', r.reply)
-  from requests r where r.token = p_token
+  -- a request past the auto-decline time reads as declined, with her message
+  select jsonb_build_object('status', case when timed then 'declined' else r.status end,
+    'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets,
+    'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end)
+  from requests r, (select book_rules() b) x,
+    lateral (select r.status='pending' and coalesce((b->>'auto')::int, 0) > 0
+                    and r.created_at <= now() - make_interval(hours => (b->>'auto')::int) as timed) t
+  where r.token = p_token
 $$;
 create or replace function public.request_cancel(p_token uuid) returns boolean
 language sql volatile security definer set search_path = public as $$
