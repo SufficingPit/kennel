@@ -935,7 +935,7 @@ function calView(){
           h('button',{class:kf===v?'on':'', 'aria-pressed':kf===v?'true':'false', onclick:()=>{ S.kf=v; commit(); }}, l, h('span',{class:'n'}, c))))),
     grid,
     // the keys only explain bars, so they wait until there's a stay on screen
-    shown.some(k => viewStays.some(s => s.kennel===k.id)) && [h('div',{class:'lg'},
+    shown.some(k => viewStays.some(s => pieces(s).some(p => p.k===k.id))) && [h('div',{class:'lg'},
       [['#1D4ED8','Booked'],['#0F766E','In kennel'],['#4B5563','Out, paid'],['#B45309','Out, unpaid']].map(([c,t]) => h('span',{}, h('span',{class:'sw',style:'background:'+c}), t)),
       h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet')),
     calTags.length>0 && h('div',{class:'lg'}, h('span',{},'Care:'),
