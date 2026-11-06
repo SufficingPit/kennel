@@ -1589,7 +1589,7 @@ function defaultSite(){
   return {v:1, notice:'',
     headline:'Lodging for your pets while you’re away from home',
     intro:'A safe, friendly place in the country north of Funk, Nebraska, for dogs, cats, and most any small pet with fur, feathers or scales.',
-    hero:'g8', heroTag:'Hi, I’m Clio!',
+    hero:'lineup', heroTag:'',
     boardIntro:'Enjoy your vacation or time away from home without worrying about your fur baby.',
     cards:[
       {title:'Dogs', text:'Each dog kennel is 4×8 feet. Dogs are let out several times a day to do their business and play. There’s an indoor play area for when it’s too cold or wet outside.\n\nThe indoor play area is shared, so your dog needs to be dog friendly to use it while others are there.', vax:'Vaccines required: Rabies, Canine Distemper, Bordetella'},
@@ -1636,7 +1636,8 @@ function siteSheet(u){
     g('top','Top of the page', W.headline, [
       tf(W,'headline','Headline',sv),
       tf(W,'intro','Under the headline',sv,{area:true}),
-      field('Big photo', h('div',{class:'chips', style:'margin:0'}, W.photos.map(p => chip(p.cap || 'Photo', W.hero===p.id, ()=>{ W.hero = p.id; redraw(); })))),
+      field('Big photo', h('div',{class:'chips', style:'margin:0'}, chip('Row of animals', W.hero==='lineup', ()=>{ W.hero = 'lineup'; redraw(); }),
+        W.photos.map(p => chip(p.cap || 'Photo', W.hero===p.id, ()=>{ W.hero = p.id; redraw(); })))),
       tf(W,'heroTag','Label on the photo (optional)',sv)]),
     g('board','Boarding', W.cards.map(c => c.title).join(', '), [
       tf(W,'boardIntro','Intro',sv,{area:true}),
