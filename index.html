@@ -311,6 +311,22 @@ const wmd = s => parseD(s).toLocaleDateString('en-US',{weekday:'short',month:'sh
 const longDay = s => parseD(s).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
 const t12 = t => { if(!t) return ''; const [a,b] = t.split(':'); return ((+a+11)%12+1)+':'+b+(+a<12?' AM':' PM'); };
 const stamp = (d,t) => d+'T'+(t||'00:00');
+/* A stay can move kennels partway through: s.moves = [{date, time, kennel}]. s.kennel is
+   where it starts. pieces(s) splits the stay into [{k, d, t, e, et}] runs in one kennel. */
+const byWhen = (a, b) => stamp(a.date, a.time) < stamp(b.date, b.time) ? -1 : 1;
+function pieces(s){
+  const out = []; let k = s.kennel, d = s.start, t = s.arr;
+  for(const m of [...(s.moves||[])].sort(byWhen)){
+    const at = stamp(m.date, m.time);
+    if(at <= stamp(d, t) || at >= stamp(s.end, s.pick) || m.kennel===k) continue;
+    out.push({k, d, t, e:m.date, et:m.time}); k = m.kennel; d = m.date; t = m.time;
+  }
+  out.push({k, d, t, e:s.end, et:s.pick});
+  return out;
+}
+// which kennel a stay is in at a given day and time (before it starts: the first kennel)
+const kennelAt = (s, D, T = '12:00') => { let k = s.kennel; for(const p of pieces(s)) if(stamp(p.d, p.t) <= stamp(D, T)) k = p.k; return k; };
+const piecesOverlap = (p, q) => stamp(p.d, p.t) < stamp(q.e, q.et) && stamp(q.d, q.t) < stamp(p.e, p.et);
 const atTime = (D, hm) => new Date(D+'T'+hm).getTime();
 const hmOf = ms => { const d = new Date(ms); return pad2(d.getHours())+':'+pad2(d.getMinutes()); };
 const plural = (n, w) => n+' '+w+(n===1?'':'s');
@@ -501,7 +517,8 @@ const withFam = s => petNames(s) + (famOf(s) ? ' ('+famOf(s)+')' : '');
 const stayClient = s => findPet(s.pets[0])?.c;
 const stayStart = s => stamp(s.start, s.arr), stayEnd = s => stamp(s.end, s.pick);
 const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
-const clash = (f, kennelId) => S.stays.find(s => s.id!==f.id && s.kennel===kennelId && s.status!=='out' && overlaps(s,f));
+const clash = (f, kennelId) => { const mine = pieces({...f, kennel:kennelId}).filter(p => p.k===kennelId);
+  return S.stays.find(s => s.id!==f.id && s.status!=='out' && pieces(s).some(q => q.k===kennelId && mine.some(p => piecesOverlap(p, q)))); };
 const statusColor = s => s.status==='out' ? (s.paid ? '#4B5563' : '#B45309') : s.status==='in' ? '#0F766E' : '#1D4ED8';
 const statusText = s => s.status==='out' ? (s.paid ? 'Out, paid' : 'Out, unpaid') : STATUS[s.status];
 
@@ -826,8 +843,8 @@ function calView(){
 
   const viewStays = S.stays.filter(s => s.start<=end && s.end>=w);
   // which kennel rows to show: all, ones with a stay in view, or ones with a pet in them right now
-  const inView = S.kennels.filter(k => viewStays.some(s=>s.kennel===k.id));
-  const hereNow = S.kennels.filter(k => S.stays.some(s=>s.kennel===k.id && s.status==='in'));
+  const inView = S.kennels.filter(k => viewStays.some(s => pieces(s).some(p => p.k===k.id && p.d<=end && p.e>=w)));
+  const hereNow = S.kennels.filter(k => S.stays.some(s => s.status==='in' && kennelAt(s, td, nowHM())===k.id));
   // the filter only means something while today is in view; other dates show every kennel
   const showsToday = w<=td && td<=end;
   const kf = showsToday ? (S.kf || 'all') : 'all';   // All the first time, then whatever was picked last on this phone
@@ -836,21 +853,23 @@ function calView(){
     const lane = h('div',{class:'lane'},
       days.map(d => h('button',{class:'cell'+(parseD(d).getDay()===0 && wide ? ' wkstart' : ''), 'aria-label':'New stay in '+k.name+' on '+md(d),
         onclick:()=>open({t:'form', f:newStayDraft(k.id, d)})})));
-    for(const s of viewStays.filter(s => s.kennel===k.id)){
-      const a = s.start<w ? 0 : (daysBetween(w,s.start) + calFrac(s.arr))/n;
-      const b = s.end>end ? 1 : (daysBetween(w,s.end) + calFrac(s.pick))/n;
+    for(const s of viewStays) for(const pc of pieces(s)){
+      if(pc.k!==k.id || pc.d>end || pc.e<w) continue;
+      const moved = pc.d!==s.start || pc.t!==s.arr, moves = pc.e!==s.end || pc.et!==s.pick;
+      const a = pc.d<w ? 0 : (daysBetween(w,pc.d) + calFrac(pc.t))/n;
+      const b = pc.e>end ? 1 : (daysBetween(w,pc.e) + calFrac(pc.et))/n;
       const width = Math.max(b-a, 0.35/n);
       const late = s.status==='booked' && stayStart(s) < stamp(td, nowHM());
-      const r = (s.start<w?'0':'6px'), rr = (s.end>end?'0':'6px');
+      const r = (pc.d<w || moved ? '0' : '6px'), rr = (pc.e>end || moves ? '0' : '6px');
       const pos = `left:calc(${a*100}% + 1px);width:calc(${width*100}% - 2px);`;
       lane.append(h('button',{class:'bar'+(late?' late':''),
         'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':''),
         style:pos+`background:${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
         onclick:()=>open({t:'stay', id:s.id})},
-        h('span',{class:'bl mqw'}, h('span',{class:'mq'}, h('span',{class:'nm'}, s.start<w?'‹ ':'', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), s.end>end && h('span',{class:'arr'},'›')));
+        h('span',{class:'bl mqw'}, h('span',{class:'mq'}, h('span',{class:'nm'}, pc.d<w ? '‹ ' : moved ? '↪ ' : '', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), pc.e>end && h('span',{class:'arr'},'›')));
       const marks = [];
       for(const D of days){
-        const all = tasksFor(s,D), seen = new Set();
+        const all = tasksFor(s,D).filter(it => stamp(pc.d,pc.t) <= stamp(D,it.tm) && stamp(D,it.tm) < stamp(pc.e,pc.et)), seen = new Set();
         let clusterStart = -999, k = 0;
         for(const it of all){
           const tg = tag(it.t.tag); if(!liveTag(tg) && !tg.del) continue;
@@ -946,7 +965,7 @@ function rangeSheet(u){
 
 /* ============================== DAY ============================== */
 const staysOn = D => S.stays.filter(s => s.start<=D && s.end>=D);
-const kennelOrder = (a,b) => S.kennels.findIndex(k=>k.id===a.kennel) - S.kennels.findIndex(k=>k.id===b.kennel);
+const kennelOrder = (a,b) => { const D = U.day || today(); return S.kennels.findIndex(k=>k.id===kennelAt(a,D)) - S.kennels.findIndex(k=>k.id===kennelAt(b,D)); };
 
 function timeline(D){
   const HOUR_PX = 56, hours = [...Array(17)].map((_,i)=>i+6), W = HOUR_PX*16;
@@ -971,7 +990,7 @@ function timeline(D){
         });
       }
       rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
-        h('div',{class:'tl-l'}, h('div',{style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(s.kennel).name),
+        h('div',{class:'tl-l'}, h('div',{style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(kennelAt(s, D)).name),
           h('div',{class:'mut mqw'}, h('span',{class:'mq'}, x.p.name+' ('+x.c.name+')')))),
         track));
     }
@@ -1009,7 +1028,7 @@ function dayView(){
 
   const stayLine = (s, action) => h('div',{class:'card row'},
     h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
-      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(s.kennel).name+' · '+(action==='in' ? 'drop-off '+t12(s.arr) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
+      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? 'drop-off '+t12(s.arr) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
     action==='in' ? btn('Check in', ()=>{s.status='in'; commit();}, 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
 
   // to-do first, grouped by time; finished items fold into one collapsible section
@@ -1019,7 +1038,7 @@ function dayView(){
     return h('div',{class:'card st row', style:'border-left-color:'+tg.color},
       h('button',{style:'min-width:0;flex:1;border:0;background:none;padding:0;text-align:left', 'aria-label':'Details for '+tg.name+', '+it.p.name, onclick:()=>doneSheet(it)},
         h('b',{}, tg.name), late && h('span',{class:'pill bad'},'overdue'),
-        h('div',{}, it.p.name+' ('+it.c.name+') · '+kennel(it.s.kennel).name),
+        h('div',{}, it.p.name+' ('+it.c.name+') · '+kennel(kennelAt(it.s, D, it.tm)).name),
         it.t.note && h('div',{class:'mut'}, it.t.note),
         isFeed(tg) && foodLine(it.p) && h('div',{class:'mut'}, foodLine(it.p)),
         done && h('div',{class:'mut'}, 'Done '+t12(hmOf(done.at)))),
@@ -1042,7 +1061,7 @@ function dayView(){
       arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
       pickups.length>0 && [h('div',{class:'sec'},'Going home'), pickups.map(s=>stayLine(s,'out'))],
       notes.length>0 && [h('div',{class:'sec'},'All stay'), notes.map(({s,p,c,t}) => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
-        h('b',{}, tag(t.tag).name), h('div',{}, p.name+' ('+c.name+') · '+kennel(s.kennel).name), t.note && h('div',{class:'mut'}, t.note)))],
+        h('b',{}, tag(t.tag).name), h('div',{}, p.name+' ('+c.name+') · '+kennel(kennelAt(s, D)).name), t.note && h('div',{class:'mut'}, t.note)))],
       h('div',{class:'sec'}, h('span',{}, 'Care to do', lateN>0 && h('span',{class:'pill bad'}, lateN+' overdue'))),
       todo.length ? timeGroups(todo)
         : h('p',{class:'empty'}, items.length ? 'All care done for this day.' : arrivals.length ? 'Check pets in to see their care here.' : tl ? 'No care to do for pets in kennels this day.' : 'No pets in kennels this day.'),
@@ -1208,6 +1227,39 @@ function stayForm(u){
   ], cancel);
 }
 
+/* ---------- moving a stay to another kennel ---------- */
+function moveSheet(u){
+  const s = S.stays.find(x => x.id===u.id); if(!s) return null;
+  const td = today(), now = nowHM();
+  const f = u.f ||= (() => { const inStay = s.start <= td && td <= s.end;
+    return {date: inStay ? td : s.start, time: inStay ? now.slice(0,3)+(now.slice(3) < '30' ? '00' : '30') : s.arr}; })();
+  const whole = stamp(f.date, f.time) <= stamp(s.start, s.arr);
+  const from = whole ? {date:s.start, time:s.arr} : f;
+  const cur = kennelAt(s, from.date, from.time);
+  // the rest of the stay from that moment, in a candidate kennel
+  const rest = k => ({id:s.id, kennel:k, start:from.date, arr:from.time, end:s.end, pick:s.pick});
+  const go = k => {
+    if(whole){ s.kennel = k; s.moves = []; }
+    else s.moves = (s.moves||[]).filter(m => stamp(m.date, m.time) < stamp(f.date, f.time)).concat({date:f.date, time:f.time, kennel:k});
+    if(!s.moves.length) delete s.moves;
+    open({t:'stay', id:s.id}); commit();
+  };
+  const back = () => open({t:'stay', id:s.id});
+  return sheet('Move '+petNames(s), [
+    h('p',{class:'mut', style:'margin-top:0'}, 'Earlier days keep the kennel they were in.'),
+    h('div',{class:'row'},
+      field('From', fieldBtn(wmd(f.date), 'Day', ()=>pickDate('Move from', f.date, v=>{ f.date = v; }, {min:s.start, span:[s.start, s.end]}))),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.time), 'Time', ()=>pickTime('Move at', f.time, v=>f.time = v, {now:true})))),
+    h('div',{class:'row start wrap', style:'margin:-4px 0 12px'}, chip('Whole stay', whole, ()=>{ f.date = s.start; f.time = s.arr; render(); }),
+      s.start <= td && td <= s.end && chip('Now', !whole && f.date===td, ()=>{ f.date = td; f.time = now; render(); })),
+    h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'}, 'Move to'),
+    h('div',{class:'plist'}, S.kennels.map(k => { const hit = k.id!==cur && clash(rest(k.id), k.id);
+      return h('button',{class:'pitem', disabled:k.id===cur || !!hit, onclick:()=>go(k.id)},
+        h('div',{class:'grow'}, h('div',{class:'t'}, k.name), h('div',{class:'s'}, k.id===cur ? 'In it now' : hit ? 'Taken: '+withFam(hit) : 'Free')),
+        k.id!==cur && !hit && h('span',{class:'pill ok'},'free')); })),
+    (s.moves||[]).length > 0 && h('div',{style:'margin:16px 0 8px'}, btn('Undo the last move', ()=>{ s.moves = [...s.moves].sort(byWhen).slice(0,-1); if(!s.moves.length) delete s.moves; back(); commit(); }, 'lk bad'))
+  ], null, back);
+}
 /* ============================== STAY DETAIL ============================== */
 // the at-a-glance info staff need while the pet is here
 // what to put in the bowl, shown with each feeding
@@ -1234,7 +1286,8 @@ function stayDetail(u){
   const warns = pets.map(p => vaxWarn(p) ? h('div',{class:'warn'}, h('b',{}, p.name+': '), vaxWarn(p)) : null);
   return sheet(petNames(s), [
     h('div',{class:'card'},
-      h('div',{class:'row'}, h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)), h('b',{}, kennel(s.kennel).name)),
+      h('div',{class:'row'}, h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)), h('b',{}, kennel(kennelAt(s, today(), nowHM())).name)),
+      pieces(s).length > 1 && h('div',{class:'mut', style:'margin-top:6px'}, pieces(s).map((p, i) => (i ? ' → ' : '')+kennel(p.k).name+(i ? ' from '+md(p.d)+' '+t12(p.t) : ''))),
       h('div',{style:'margin-top:10px'}, h('b',{},'Drop-off '), wmd(s.start)+', '+t12(s.arr)),
       h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
       h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
@@ -1245,7 +1298,8 @@ function stayDetail(u){
     h('div',{class:'row wrap start'},
       btn(s.paid ? '✓ Paid' : 'Mark paid', ()=>set('paid',!s.paid), 'chip'+(s.paid?' on':'')),
       btn('Owner report', ()=>open({t:'report', id:s.id}), 'chip'),
-      btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||''}}), 'chip'),
+      s.status!=='out' && btn('Move kennel', ()=>open({t:'move', id:s.id}), 'chip'),
+      btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, moves:s.moves, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||''}}), 'chip'),
 ),
     pets.map(p => [h('div',{class:'sec'}, p.name, btn('Edit pet', ()=>open({t:'pet', id:p.id, back:u}), 'lk')),
       petFacts(p), planReadOnly(p.plan)]),
@@ -1354,7 +1408,7 @@ function clientSheet(u){
     h('textarea',{'aria-label':'Notes', onchange:e=>{ c.notes=e.target.value.trim(); if(!isNew) commit(); }}, c.notes||''),
     !isNew && [h('div',{class:'sec'},'Stays'),
       stays.length ? stays.map(s => h('button',{class:'card row', onclick:()=>open({t:'stay',id:s.id})},
-        h('span',{class:'grow'}, h('b',{}, md(s.start)+' – '+md(s.end)), h('div',{class:'mut'}, petNames(s)+' · '+kennel(s.kennel).name)),
+        h('span',{class:'grow'}, h('b',{}, md(s.start)+' – '+md(s.end)), h('div',{class:'mut'}, petNames(s)+' · '+pieces(s).map(p => kennel(p.k).name).join(' → '))),
         h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)))) : h('p',{class:'mut'},'No stays yet.'),
       h('div',{style:'margin:24px 0 8px'}, btn('Delete family', ()=>confirmSheet('Delete the '+c.name+' family?', 'Also deletes their '+plural(c.pets.length,'pet')+' and '+plural(stays.length,'stay')+'. This can’t be undone.', 'Delete', ()=>{
         const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
@@ -1563,7 +1617,7 @@ function kennelSheet(u){
 function kennelRemoveSheet(){
   return sheet('Remove a kennel', [
     h('p',{class:'mut', style:'margin-top:0'},'Only kennels with no upcoming or current stays can be removed.'),
-    h('div',{class:'plist'}, S.kennels.map(k => { const busy = S.stays.some(s=>s.kennel===k.id && s.status!=='out');
+    h('div',{class:'plist'}, S.kennels.map(k => { const busy = S.stays.some(s => s.status!=='out' && pieces(s).some(p => p.k===k.id));
       return h('button',{class:'pitem', disabled:busy, onclick:()=>confirmSheet('Remove '+k.name+'?', 'Past stays in it will show the kennel as removed.', 'Remove', ()=>{ S.kennels = S.kennels.filter(x=>x!==k); }, {t:'kennelrm'})},
         h('div',{class:'grow'}, h('div',{class:'t'}, k.name), busy && h('div',{class:'s'},'In use'))); }))
   ], null);
@@ -1601,7 +1655,8 @@ function defaultSite(){
     extras:[{label:'Pickup during evening hours', price:'+$5'}, {label:'Drop-off or pickup outside hours', price:'+$10'}, {label:'Medications given', price:'+$2'}],
     payNote:'We take cards through Square. Card payments have a 2.6% fee to cover Square’s charge.',
     about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska north of Funk. We accept most any small pet, not just dogs and cats! We provide a safe place to house your fur, feather, or scaly babies when you are away from home for whatever reason.\n\nOwner Ashleigh Jauken operates the facility mostly by herself, but now has two young sons in tow. You’ll probably see Kaleb, Kolby, or both as she works. She has always loved all animals and has experience with many pets throughout her life. She went to Nebraska College of Technical Agriculture and studied to become a vet tech. Although she didn’t quite make it to a licensed vet tech, she still graduated with a Degree of Applied Animal Science.\n\nAshleigh came up with the name Little Village Pet Lodge from the facility’s location. It’s just north of Funk, Nebraska, which is officially called the Village of Funk. “I thought it would be fun to call my business Little Village because of its location near Funk. Plus, there are hopefully going to be many different animals staying there, like a village would, so why not Little Village?” Ashleigh says. The Lodge part of the name also comes from where the property is. “When you think lodge, you usually think of a place out in the country, and my little pet village is out in the country, so it made perfect sense to say lodge at the end instead of boarding. And that’s how Little Village Pet Lodge was named!”',
-    groomer:'Groomers: we’re looking for a groomer to rent space at the lodge. Call, text or email if you’re interested.',
+    groomer:'Do you or someone you know groom animals? Need somewhere to operate? Little Village is looking for a groomer to rent space here at the lodge! Call, text, or email for more information!',
+    aboutPhoto:'g1', aboutCap:'',
     phone:'(308) 233-2652', email:'littlevillagepetlodge@outlook.com',
     facebook:'https://www.facebook.com/Little-Village-Pet-Lodge-109671294113263/',
     address:'11841 740 Road, Funk, NE 68940',
@@ -1668,7 +1723,11 @@ function siteSheet(u){
       up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err)]),
     g('about','About', W.about.slice(0,60)+'…', [
       tf(W,'about','About us (a blank line starts a new paragraph)',sv,{area:true}),
-      tf(W,'groomer','Extra note (optional)',sv,{area:true})]),
+      field('Photo beside it', h('div',{class:'chips', style:'margin:0'}, W.photos.map(p => chip(p.cap || 'Photo', (W.aboutPhoto||'g1')===p.id, ()=>{ W.aboutPhoto = p.id; redraw(); })))),
+      tf(W,'aboutCap','Caption under that photo (optional)',sv,{ph:'e.g. LOOK UP THERE!'})]),
+    g('groom','Grooming', W.groomer ? 'Coming soon' : 'Hidden', [
+      h('p',{class:'mut', style:'margin-top:0'},'Shown as a “Coming soon” box. Leave it empty to hide the section.'),
+      tf(W,'groomer','Grooming text',sv,{area:true})]),
     g('contact','Contact and directions', W.phone+' · '+W.email, [
       two(tf(W,'phone','Phone',sv,{type:'tel'}), tf(W,'email','Email',sv)),
       tf(W,'facebook','Facebook page link',sv),
@@ -2335,7 +2394,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {

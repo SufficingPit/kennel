@@ -66,11 +66,18 @@ language sql stable security definer set search_path = public as $$
   where r.kind='settings' and r.id='main' and not r.deleted
 $$;
 
--- Stays that use a kennel: (kennel, first night, end date)
+-- Stays that use a kennel: (kennel, first night, end date). A stay that moved kennels
+-- partway through (data.moves = [{date, time, kennel}]) counts in each kennel for its part:
+-- the night of a move day belongs to the new kennel.
 create or replace function public.book_stays() returns table(kid text, s date, e date)
 language sql stable security definer set search_path = public as $$
-  select data->>'kennel', (data->>'start')::date, (data->>'end')::date
-  from records where kind='stay' and not deleted and coalesce(data->>'status','') <> 'out'
+  with st as (select id, data, (data->>'start')::date s0, (data->>'end')::date e0
+              from records where kind='stay' and not deleted and coalesce(data->>'status','') <> 'out'),
+  pts as (select id, e0, data->>'kennel' k, s0 d from st
+          union all
+          select id, e0, m->>'kennel', (m->>'date')::date from st, jsonb_array_elements(coalesce(data->'moves','[]'::jsonb)) m
+          where (m->>'date')::date > s0 and (m->>'date')::date < e0)
+  select k, d, coalesce(lead(d) over (partition by id order by d, k), e0) from pts
 $$;
 
 -- Requests still holding spots
