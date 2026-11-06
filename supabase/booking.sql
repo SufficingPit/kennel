@@ -37,6 +37,8 @@ create index if not exists requests_open on public.requests (status, start_date)
 -- the page sends a fresh key with each request, so a double tap or a resend after a dropped
 -- connection gives back the same request instead of making a second one
 alter table public.requests add column if not exists client_key uuid unique;
+-- false while the answer still needs texting from her phone (answers made before this read as sent)
+alter table public.requests add column if not exists texted boolean not null default true;
 
 -- Staff (signed in) read and answer requests. Nobody deletes. The public gets nothing
 -- directly, only the functions.
