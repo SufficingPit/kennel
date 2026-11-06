@@ -1013,6 +1013,7 @@ function importData(e){
   const file = e.target.files[0]; if(!file) return;
   file.text().then(txt => {
     let d; try { d = JSON.parse(txt); } catch(err) {}
+    if(Array.isArray(d)) d = fromRows(d);   // a nightly backup file: one row per record
     d = migrate(d);
     if(!d || !Array.isArray(d.stays)) { alert('That file isn’t a kennel backup.'); return; }
     confirmSheet('Replace all data?', 'Everything here is replaced with the backup from that file.', 'Replace', ()=>{ S=d; });
@@ -1594,6 +1595,11 @@ function startSync(upload){
   save(); render();
 }
 function signOut(){ Y = freshSync(); saveSync(); render(); }
+function fromRows(rows){
+  const prev = S; S = blankData();
+  rows.forEach(r => { if(r && r.kind && !r.deleted) applyRecord(r.kind+':'+r.id, r.data); });
+  const d = S; S = prev; return d;
+}
 function blankData(){ const d = seed(); d.clients = []; d.stays = []; d.log = {}; return d; }
 
 if(syncOn()){
