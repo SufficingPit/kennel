@@ -1656,7 +1656,7 @@ function defaultSite(){
     payNote:'We take cards through Square. Card payments have a 2.6% fee to cover Square’s charge.',
     about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska north of Funk. We accept most any small pet, not just dogs and cats! We provide a safe place to house your fur, feather, or scaly babies when you are away from home for whatever reason.\n\nOwner Ashleigh Jauken operates the facility mostly by herself, but now has two young sons in tow. You’ll probably see Kaleb, Kolby, or both as she works. She has always loved all animals and has experience with many pets throughout her life. She went to Nebraska College of Technical Agriculture and studied to become a vet tech. Although she didn’t quite make it to a licensed vet tech, she still graduated with a Degree of Applied Animal Science.\n\nAshleigh came up with the name Little Village Pet Lodge from the facility’s location. It’s just north of Funk, Nebraska, which is officially called the Village of Funk. “I thought it would be fun to call my business Little Village because of its location near Funk. Plus, there are hopefully going to be many different animals staying there, like a village would, so why not Little Village?” Ashleigh says. The Lodge part of the name also comes from where the property is. “When you think lodge, you usually think of a place out in the country, and my little pet village is out in the country, so it made perfect sense to say lodge at the end instead of boarding. And that’s how Little Village Pet Lodge was named!”',
     groomer:'Do you or someone you know groom animals? Need somewhere to operate? Little Village is looking for a groomer to rent space here at the lodge! Call, text, or email for more information!',
-    aboutPhoto:'g1', aboutCap:'',
+    aboutPhoto:'lookup', aboutCap:'LOOK UP THERE!',
     phone:'(308) 233-2652', email:'littlevillagepetlodge@outlook.com',
     facebook:'https://www.facebook.com/Little-Village-Pet-Lodge-109671294113263/',
     address:'11841 740 Road, Funk, NE 68940',
@@ -1723,7 +1723,8 @@ function siteSheet(u){
       up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err)]),
     g('about','About', W.about.slice(0,60)+'…', [
       tf(W,'about','About us (a blank line starts a new paragraph)',sv,{area:true}),
-      field('Photo beside it', h('div',{class:'chips', style:'margin:0'}, W.photos.map(p => chip(p.cap || 'Photo', (W.aboutPhoto||'g1')===p.id, ()=>{ W.aboutPhoto = p.id; redraw(); })))),
+      field('Photo beside it', h('div',{class:'chips', style:'margin:0'}, chip('Cat looking up', (W.aboutPhoto||'lookup')==='lookup', ()=>{ W.aboutPhoto = 'lookup'; redraw(); }),
+        W.photos.map(p => chip(p.cap || 'Photo', W.aboutPhoto===p.id, ()=>{ W.aboutPhoto = p.id; redraw(); })))),
       tf(W,'aboutCap','Caption under that photo (optional)',sv,{ph:'e.g. LOOK UP THERE!'})]),
     g('groom','Grooming', W.groomer ? 'Coming soon' : 'Hidden', [
       h('p',{class:'mut', style:'margin-top:0'},'Shown as a “Coming soon” box. Leave it empty to hide the section.'),
