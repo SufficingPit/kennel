@@ -99,7 +99,7 @@ body.typing .sh>.ft{position:static;border-top:0}
 .bar{position:absolute;top:4px;height:24px;z-index:2;border:0;border-radius:6px;padding:0 6px;color:#fff;font-size:11px;font-weight:600;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:24px}
 .bar.late{outline:2px dashed var(--bad);outline-offset:1px}
 .trk{position:absolute;top:31px;height:8px;border-radius:3px;z-index:2;pointer-events:none}
-.pip{position:absolute;top:31px;height:8px;width:3px;margin-left:-1.5px;box-shadow:0 0 0 1px var(--bg);border-radius:2px;z-index:3;pointer-events:none}
+.pip{position:absolute;top:31px;height:8px;width:2px;margin-left:-1px;border-radius:1px;z-index:3;pointer-events:none}
 .pip.done{opacity:.3}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;border:1px solid rgba(255,255,255,.9);margin-left:4px;vertical-align:middle}
 .ovl{position:absolute;top:0;bottom:0;left:46px;right:0;pointer-events:none;z-index:1}
@@ -808,7 +808,7 @@ function calView(){
       }
       if(marks.length) lane.append(
         h('div',{class:'trk', style:pos+`background:color-mix(in srgb, ${statusColor(s)} 22%, transparent)`}),
-        ...marks.map(m => h('div',{class:'pip'+(m.done?' done':''), title:m.tg.name+' '+t12(m.tm), style:`left:calc(${m.x*100}% + ${m.k*4}px);background:${m.tg.color}`})));
+        ...marks.map(m => h('div',{class:'pip'+(m.done?' done':''), title:m.tg.name+' '+t12(m.tm), style:`left:calc(${m.x*100}% + ${m.k*3}px);background:${m.tg.color}`})));
     }
     return h('div',{class:'kr'}, h('div',{class:'lab'}, k.name), lane);
   });
