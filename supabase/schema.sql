@@ -51,3 +51,15 @@ end $$;
 drop trigger if exists records_keep_newest on public.records;
 create trigger records_keep_newest before insert or update on public.records
   for each row execute function public.records_keep_newest();
+
+-- Pet records (shot records, vet papers): photos and PDFs in a private bucket.
+-- Signed-in users can add and read; nobody can overwrite or delete. The app opens a
+-- file through a link that stops working after an hour.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('docs', 'docs', false, 10485760, array['image/jpeg', 'application/pdf'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+drop policy if exists "staff read docs" on storage.objects;
+drop policy if exists "staff add docs"  on storage.objects;
+create policy "staff read docs" on storage.objects for select to authenticated using (bucket_id = 'docs');
+create policy "staff add docs"  on storage.objects for insert to authenticated with check (bucket_id = 'docs');

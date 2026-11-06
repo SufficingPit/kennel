@@ -40,6 +40,8 @@ button:disabled{opacity:.45;cursor:default}
 .card{background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:block;box-shadow:var(--shadow)}
 button.card{width:100%;border:0;text-align:left}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.docrow{display:flex;align-items:center;gap:10px;min-height:48px}
+.docimg{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#fff;margin:4px 0 12px}
 .row.start{justify-content:flex-start}
 .wrap{flex-wrap:wrap}
 .grow{flex:1;min-width:0}
@@ -338,6 +340,21 @@ function migrate(d){
   return null;
 }
 
+// a made-up vaccine certificate for the demo (fake clinic, fake numbers)
+function demoShotRecord(name){
+  const d = n => ymd(addDays(today(), n));
+  const rows = [['Rabies (3 year)', d(-240), d(-240+1095)], ['DHPP', d(-240), d(-240+365)], ['Bordetella', d(-60), d(-60+365)], ['Leptospirosis', d(-240), d(-240+365)]];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420" font-family="Georgia, serif" fill="#222">
+<rect width="600" height="420" fill="#fffdf7"/><rect x="14" y="14" width="572" height="392" fill="none" stroke="#0F766E" stroke-width="3"/>
+<text x="300" y="62" text-anchor="middle" font-size="26" font-weight="bold">Certificate of Vaccination</text>
+<text x="300" y="90" text-anchor="middle" font-size="15" fill="#555">Maple Creek Vet Clinic · 555-0100</text>
+<text x="44" y="135" font-size="16">Patient: <tspan font-weight="bold">${name}</tspan>    Species: Canine    Breed: Corgi</text>
+<line x1="44" y1="160" x2="556" y2="160" stroke="#999"/>
+<text font-size="14" font-weight="bold"><tspan x="44" y="185">Vaccine</tspan><tspan x="270" y="185">Given</tspan><tspan x="420" y="185">Due</tspan></text>
+${rows.map((r,i) => `<text font-size="15" y="${218+i*32}"><tspan x="44">${r[0]}</tspan><tspan x="270">${r[1]}</tspan><tspan x="420">${r[2]}</tspan></text>`).join('')}
+<text x="44" y="380" font-size="14" fill="#555">Signed: Dr. Sample, DVM (demo record)</text></svg>`;
+  return {id:uid('d'), name:'Vaccine certificate', kind:'img', at:addDays(today(), -60), data:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)};
+}
 function seed(){
   const kennels = [...Array(16)].map((_,i)=>({id:'k'+(i+1), name:'D'+(i+1)}))
     .concat([{id:'k17',name:'C1'},{id:'k18',name:'C2'}]);
@@ -348,6 +365,7 @@ function seed(){
   const cat = (name, info={}, extra=[]) => pet(name, {species:'cat', ...info}, [], catPlan().concat(extra));
 
   const tucker = pet('Tucker', {breed:'Corgi', color:'Red & white', sex:'m', fixed:'yes', food:'Purina Pro Plan, 1 cup', perDay:'2', treats:'yes', treatFav:'peanut butter biscuits', personality:['Playful'], along:['Everyone'], likes:'Tennis balls'});
+  tucker.docs = [demoShotRecord('Tucker')];
   const hazel = pet('Hazel', {breed:'Golden mix', color:'Gold', sex:'f', fixed:'yes', food:'Purina Pro Plan, 1½ cups', perDay:'2', personality:['Cuddlebug'], along:['Dogs','Humans']});
   const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Love at first lick']});
   const gus = pet('Gus', {breed:'Beagle', color:'Tricolor', sex:'m', fixed:'yes', bites:'yes', dislikes:'Being picked up', conditions:'Seasonal allergies', personality:['Shy at first']},
@@ -1353,8 +1371,9 @@ function petSheet(u){
       field('Date of birth', fieldBtn(p.dob && ymd(p.dob), 'Not set', ()=>pickDate('Date of birth', p.dob, v=>{ p.dob=v; save(); }, {wheels:true}))),
       field('Sex', seg([['m','Male'],['f','Female']], p.sex, v=>{ p.sex = p.sex===v?'':v; commit(); })),
       field(p.sex==='f'?'Spayed':p.sex==='m'?'Neutered':'Spayed / neutered', yesNo(p,'fixed'))]),
-    group(g('p-health'),'Health & vaccines', join(p.conditions, vaxSummary(p)), [
+    group(g('p-health'),'Health & vaccines', join(p.conditions, vaxSummary(p), p.docs?.length && (p.docs.length===1 ? '1 record' : p.docs.length+' records')), [
       field('Vaccines up to date', seg([['yes','Yes'],['no','No']], p.vaxOk, v=>{ p.vaxOk = p.vaxOk===v ? '' : v; commit(); })),
+      field('Shot and vet records', docList(p, u)),
       tf(p,'conditions','Allergies / medical conditions',commit,{area:true, ph:'None'})], {pill: p.vaxOk!=='yes' && h('span',{class:'pill bad'},'!')}),
     group(g('p-food'),'Food & treats', join(p.food, p.perDay && p.perDay+'×/day', p.treats==='yes' ? 'Treats OK' : p.treats==='no' ? 'No treats' : ''), [
       tf(p,'food','Food / brand and amount',save,{ph:'e.g. Purina Pro Plan, 1 cup'}),
@@ -1595,6 +1614,91 @@ async function api(path, opts={}, retried){
   const t = await r.text();
   return t ? JSON.parse(t) : null;
 }
+/* ---------- pet records (shot records and the like): photos or PDFs ----------
+   Files go to the private "docs" storage bucket. The pet keeps a list of {id, name, kind:'img'|'pdf', at, path}.
+   Removing a record only takes it off the list; the file stays in storage, like everything else.
+   The demo keeps its files on the phone instead (d.data). */
+const docURLs = {};   // record id -> {url, exp} once loaded, {busy} while loading, {err}
+async function storage(path, opts={}, retried){
+  await freshToken();
+  const r = await fetch(SUPA.url+'/storage/v1/'+path, {...opts, headers:{apikey:SUPA.key, Authorization:'Bearer '+Y.session.access_token, ...opts.headers}});
+  if((r.status===401 || r.status===403) && !retried){ Y.session.expires_at = 0; return storage(path, opts, true); }
+  if(!r.ok) throw new Error('Server said '+r.status);
+  return r.json();
+}
+// photos are saved as a JPEG no bigger than 2000px: a shot record stays readable and small
+async function shrinkImage(file){
+  let im;
+  try { im = await createImageBitmap(file); }
+  catch(e){ im = await new Promise((ok, no) => { const x = new Image(); x.onload = () => ok(x); x.onerror = no; x.src = URL.createObjectURL(file); }); }
+  const k = Math.min(1, 2000/Math.max(im.width, im.height));
+  const cv = h('canvas',{width:Math.round(im.width*k), height:Math.round(im.height*k)}), ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(im, 0, 0, cv.width, cv.height);
+  return new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error('bad image')), 'image/jpeg', .82));
+}
+const asDataURL = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
+const docName = (f, pdf) => pdf && f.name.replace(/\.pdf$/i,'').replace(/_+/g,' ').trim() || 'Vet record';
+async function addDocs(p, files){
+  if(!files.length) return;
+  U.upl = {pet:p.id}; render();
+  let err = '';
+  for(const f of files){
+    const pdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name);
+    if(!pdf && !/^image\//.test(f.type)){ err = 'Only photos and PDFs can be added.'; continue; }
+    try {
+      const blob = pdf ? f : await shrinkImage(f).catch(() => { throw new Error('Couldn’t read that photo.'); });
+      if(blob.size > (DEMO ? 2e6 : 10e6)){ err = 'That file is too big (over '+(DEMO?2:10)+' MB).'; continue; }
+      const d = {id:uid('d'), name:docName(f, pdf), kind:pdf ? 'pdf' : 'img', at:today()};
+      if(DEMO) d.data = await asDataURL(blob);
+      else { d.path = d.id + (pdf ? '.pdf' : '.jpg');
+        await storage('object/docs/'+d.path, {method:'POST', headers:{'Content-Type':pdf ? 'application/pdf' : 'image/jpeg', 'x-upsert':'false'}, body:blob}); }
+      const live = findPet(p.id)?.p || p;   // a sync may have refreshed the pet meanwhile
+      (live.docs ||= []).push(d);
+      if(DEMO){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){ live.docs.pop(); err = 'The demo is out of room for files.'; continue; } }
+      save();
+    } catch(e){ err = e.message==='Couldn’t read that photo.' ? e.message : 'Couldn’t upload. Check the signal and try again.'; }
+  }
+  U.upl = err ? {pet:p.id, err} : null;
+  quietRender();
+}
+async function loadDoc(d){
+  if(d.data) return URL.createObjectURL(await (await fetch(d.data)).blob());
+  const j = await storage('object/sign/docs/'+d.path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:3600})});
+  return SUPA.url+'/storage/v1'+j.signedURL;
+}
+function docSrc(d){
+  const c = docURLs[d.id];
+  if(c && (c.busy || c.err || c.exp > Date.now())) return c;
+  docURLs[d.id] = {busy:true};
+  loadDoc(d).then(url => { docURLs[d.id] = {url, exp:Date.now() + 50*60e3}; })
+    .catch(() => { docURLs[d.id] = {err:'Couldn’t open it. Check the signal and try again.'}; })
+    .finally(quietRender);
+  return docURLs[d.id];
+}
+function docList(p, back){
+  const up = U.upl && U.upl.pet===p.id ? U.upl : null;
+  return h('div',{},
+    (p.docs||[]).map(d => h('button',{class:'card docrow', onclick:()=>{ if(docURLs[d.id]?.err) delete docURLs[d.id]; open({t:'doc', pet:p.id, doc:d.id, back}); }},
+      h('span',{class:'grow'}, d.name), h('span',{class:'mut'}, (d.kind==='pdf' ? 'PDF' : 'Photo')+' · '+md(d.at)))),
+    up && !up.err ? h('p',{class:'mut'},'Uploading…')
+      : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add photo or PDF',
+          h('input',{type:'file', accept:'image/*,application/pdf', multiple:true, style:'display:none', onchange:e=>addDocs(p, [...e.target.files])})),
+    up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err));
+}
+function docSheet(u){
+  const p = findPet(u.pet)?.p || u.back?.p, d = p && (p.docs||[]).find(x => x.id===u.doc);
+  if(!d) return null;
+  const back = () => open(u.back), src = docSrc(d);
+  return sheet(d.name, [
+    field('Name', inp(d.name, v => { if(v.trim()) d.name = v.trim(); save(); quietRender(); }, {autocomplete:'off'})),
+    h('p',{class:'mut', style:'margin-top:0'}, (d.kind==='pdf' ? 'PDF' : 'Photo')+', added '+ymd(d.at)),
+    src.err ? h('p',{class:'err'}, src.err) : !src.url ? h('p',{class:'mut'},'Loading…')
+      : [d.kind==='img' && h('img',{class:'docimg', src:src.url, alt:d.name}),
+         h('a',{class:'b2 sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:src.url, target:'_blank', rel:'noopener'}, d.kind==='pdf' ? 'Open PDF' : 'Open full size')],
+    h('div',{style:'margin:24px 0 8px'}, btn('Remove record', ()=>confirmSheet('Remove '+d.name+'?', 'Takes it off '+p.name+'’s records.', 'Remove', ()=>{
+      p.docs = p.docs.filter(x => x!==d); U.sh = u.back; }, u), 'lk bad'))
+  ], btn('Done', back), back);
+}
 // Pages of rows changed since `since` (all rows when null), oldest first
 async function fetchRows(since){
   const out = [];
@@ -1778,7 +1882,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
