@@ -362,7 +362,9 @@ function seed(){
   const duke = pet('Duke', {breed:'German Shepherd', color:'Black & tan', sex:'m', fixed:'no', fights:'yes', along:['Humans'], notes:'Dog-reactive. Walk alone, no shared yard time.'});
   const coco = pet('Coco', {breed:'Toy Poodle', color:'Apricot', sex:'f', fixed:'yes'});
   const zeus = pet('Zeus', {breed:'Pit mix', color:'Blue', sex:'m', fixed:'yes', personality:['Cuddlebug'], along:['Everyone']});
-  const ginger = pet('Ginger', {breed:'Golden Retriever', color:'Gold', sex:'f', fixed:'yes'});
+  // her owner's own feeding times, so updating the starting care leaves her alone
+  const ginger = pet('Ginger', {breed:'Golden Retriever', color:'Gold', sex:'f', fixed:'yes', food:'Orijen Senior, 1 cup'}, [],
+    [task('feed',['06:30','16:30']), task('potty',['07:00','12:00','21:00'])]);
   const murphy = pet('Murphy', {breed:'Bernese', color:'Tricolor', sex:'m', fixed:'yes'});
 
   const vet = 'Maple Creek Vet Clinic', vetPhone = '555-0100';
@@ -405,7 +407,7 @@ function seed(){
     stay('k3',  3,'09:00', 6,'16:00','booked',[coco]),
     stay('k8',  5,'09:00', 8,'16:00','booked',[murphy])];
 
-  const data = {v:4, kennels, tpl,
+  const data = {v:4, seeded:today(), kennels, tpl,
     tags:[
       {id:'feed',name:'Feed',color:'#16A34A'},
       {id:'potty',name:'Potty',color:'#0EA5E9'},
@@ -1053,7 +1055,9 @@ function settingsView(){
 
       // sample data is for trying the app out; once signed in, the real book is online
       DEMO && [h('div',{class:'sec'},'Demo'),
-        btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm')])];
+        h('div',{class:'row start wrap'},
+          btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm'),
+          btn('Leave demo', ()=>{ location.href = './'; }, 'lk'))])];
 }
 function exportData(){
   const blob = new Blob([JSON.stringify(S,null,1)], {type:'application/json'});
@@ -1692,7 +1696,9 @@ function signInScreen(){
       field('Email', h('input',{type:'email', name:'email', value:u.email, autocomplete:'username', inputmode:'email', oninput:e=>{ u.email = e.target.value; u.err = ''; }})),
       field('Password', h('input',{type:'password', name:'password', value:u.pw, autocomplete:'current-password', oninput:e=>{ u.pw = e.target.value; u.err = ''; }})),
       u.err && h('div',{class:'err', style:'margin-bottom:10px'}, u.err),
-      h('button',{class:'b', type:'submit', disabled:u.busy, style:'width:100%'}, u.busy ? 'Signing in…' : 'Sign in')));
+      h('button',{class:'b', type:'submit', disabled:u.busy, style:'width:100%'}, u.busy ? 'Signing in…' : 'Sign in')),
+    // for showing the app off with sample data; never touches the real book
+    h('a',{class:'lk', href:'./?demo', style:'display:inline-block;margin-top:28px;text-decoration:none'}, 'Try the demo'));
 }
 function syncSection(){
   if(!syncOn() || !Y.session) return null;
@@ -1812,6 +1818,8 @@ function render(){
 }
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
 S = migrate(S) || seed();
+// the demo's stays are placed around the day it was built, so a new day gets fresh sample data (keeping the calendar filter)
+if(DEMO && S.seeded !== today()){ const kf = S.kf; S = seed(); if(kf) S.kf = kf; saveLocal(); }
 render();
 syncNow();   // catch up with other phones as soon as the app opens
 
