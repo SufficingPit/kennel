@@ -1664,7 +1664,9 @@ function closedSheet(u){
 const BIZ = 'Little Village Pet Lodge';
 let R = {list:[], loaded:false, err:''};
 const reqHeld = r => r.status==='pending' && Date.parse(r.created_at) + (S.book.hold||48)*3600e3 > Date.now();
-const reqWaiting = () => R.list.filter(r => r.status==='pending');
+// a booked request the customer cancelled leaves its stays on the calendar until she removes them
+const reqStays = r => (r.stay_id||'').split(',').filter(id => S.stays.some(s => s.id===id));
+const reqWaiting = () => R.list.filter(r => r.status==='pending' || (r.status==='cancelled' && reqStays(r).length));
 const firstName = n => (n||'').trim().split(/\s+/)[0] || '';
 const lastName = n => { const w = (n||'').trim().split(/\s+/); return w.length > 1 ? w[w.length-1] : w[0] || ''; };
 const reqPetsText = r => { const nd = r.pets.filter(p=>p.species==='dog').length, nc = r.pets.length - nd;
@@ -1724,7 +1726,7 @@ function reqCard(r){
 function reqsView(){
   if(!R.loaded) loadRequests().then(quietRender);
   const wait = reqWaiting().sort((a,b) => a.start_date < b.start_date ? -1 : 1);
-  const done = R.list.filter(r => r.status!=='pending' && Date.parse(r.answered_at || r.created_at) > Date.now() - 30*864e5);
+  const done = R.list.filter(r => !wait.includes(r) && Date.parse(r.answered_at || r.created_at) > Date.now() - 30*864e5);
   return [h('div',{class:'top hdr'}, h('h1',{},'Requests')),
     h('div',{class:'pad'},
       !S.book.on && h('div',{class:'warn'},'Online requests are turned off. Turn them on in Settings, Online booking.'),
@@ -1749,6 +1751,9 @@ function reqSheet(u){
   return sheet(r.name, [
     r.status!=='pending' && h('div',{class:'warn'}, r.status==='approved' ? 'Approved '+ago(r.answered_at)+'.' : r.status==='declined' ? 'Declined '+ago(r.answered_at)+'.' : 'They cancelled this request.',
       r.reply && h('div',{}, 'Your note: '+r.reply)),
+    r.status==='cancelled' && reqStays(r).length > 0 && h('div',{class:'warn'}, 'They cancelled after you booked it. The stay is still on the calendar.',
+      h('div',{style:'margin-top:8px'}, btn('Remove the stay', ()=>confirmSheet('Remove this stay?', 'Takes '+reqPetsText(r)+' off the calendar for '+md(r.start_date)+' – '+md(r.end_date)+'.', 'Remove', ()=>{
+        const ids = reqStays(r); S.stays = S.stays.filter(s => !ids.includes(s.id)); U.sh = {t:'req', id:r.id}; }, {t:'req', id:r.id}), 'b2 sm'))),
     r.status==='pending' && !reqHeld(r) && h('div',{class:'warn'},'Not answered in time, so its spots are open again. You can still approve it if there’s room.'),
     h('div',{class:'card'},
       line('Drop-off', wmd(r.start_date)+', '+t12(r.arr)+(offHours(r.start_date, r.arr) ? ' (other time'+fee+')' : '')),

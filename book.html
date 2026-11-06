@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<title>Request a Stay</title>
+<meta name="description" content="Check open spots and request a boarding stay at Little Village Pet Lodge.">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{--bg:#F7F7F5;--card:#fff;--ink:#1F2937;--mut:#5B6472;--line:#DDDDD6;--row:#EFEFEA;--pri:#0F766E;--pri-soft:#E3F2EF;--onp:#fff;--bad:#B91C1C;--warnbg:#FEF3C7;--warnfg:#78350F;--field:#C9CBC3;--off:#E4E4DE;--shadow:0 1px 2px rgba(0,0,0,.06)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1B2027;--ink:#E5E7EB;--mut:#A3ACB9;--line:#2E353F;--row:#171B21;--pri:#3BAE9F;--pri-soft:#173A36;--onp:#06201C;--bad:#F87171;--warnbg:#3A2E0B;--warnfg:#FCD34D;--field:#3A424D;--off:#20262E;--shadow:none;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1B2027;--ink:#E5E7EB;--mut:#A3ACB9;--line:#2E353F;--row:#171B21;--pri:#3BAE9F;--pri-soft:#173A36;--onp:#06201C;--bad:#F87171;--warnbg:#3A2E0B;--warnfg:#FCD34D;--field:#3A424D;--off:#20262E;--shadow:none;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg)}
+body{margin:0;color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+#app{max-width:620px;margin:0 auto;padding:max(20px,env(safe-area-inset-top)) 16px 48px}
+h1{font-size:26px;margin:0 0 2px}
+h2{font-size:17px;margin:28px 0 10px}
+p{margin:0 0 10px}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{cursor:default}
+.biz{color:var(--pri);font-weight:700;font-size:14px;letter-spacing:.02em}
+.mut{color:var(--mut);font-size:14px}
+.card{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.b{min-height:50px;width:100%;padding:0 20px;border:0;border-radius:12px;background:var(--pri);color:var(--onp);font-weight:700;font-size:16px}
+.b:disabled{opacity:.45}
+.b2{min-height:46px;padding:0 16px;border:1px solid var(--field);border-radius:12px;background:var(--card);font-weight:600}
+.lk{border:0;background:none;color:var(--pri);font-weight:600;padding:8px 4px;min-height:40px}
+.lk.bad{color:var(--bad)}
+.err{color:var(--bad);font-weight:600;font-size:15px;margin:10px 0}
+.warn{background:var(--warnbg);color:var(--warnfg);border-radius:12px;padding:12px 14px;margin:10px 0;font-size:15px}
+.ok{background:var(--pri-soft);color:var(--ink);border-radius:12px;padding:12px 14px;margin:10px 0}
+.lbl{display:block;font-size:13px;font-weight:600;color:var(--mut);margin:0 0 5px}
+.f{display:block;margin-bottom:12px}
+input,textarea{width:100%;min-height:48px;border:1px solid var(--field);border-radius:10px;padding:0 12px;background:var(--card);font-size:16px}
+textarea{padding:10px 12px;min-height:84px;resize:vertical}
+input:focus,textarea:focus{outline:2px solid var(--pri);outline-offset:-1px;border-color:var(--pri)}
+.two{display:flex;gap:10px}.two>*{flex:1;min-width:0}
+/* counters */
+.cnt{display:flex;align-items:center;gap:12px}
+.cnt button{width:44px;height:44px;border-radius:22px;border:1px solid var(--field);background:var(--card);font-size:22px;line-height:1}
+.cnt button:disabled{opacity:.35}
+.cnt b{min-width:24px;text-align:center;font-size:18px}
+.seg{display:flex;border:1px solid var(--field);border-radius:12px;overflow:hidden;background:var(--card)}
+.seg button{flex:1;min-height:44px;border:0;background:none;font-weight:600}
+.seg button+button{border-left:1px solid var(--field)}
+.seg .on{background:var(--pri);color:var(--onp)}
+/* month calendar */
+.mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.mh b{font-size:17px}
+.mh button{width:44px;height:44px;border:0;background:none;font-size:22px;color:var(--ink)}
+.mh button:disabled{opacity:.25}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.dow{text-align:center;font-size:12px;font-weight:600;color:var(--mut);padding:4px 0}
+.day{position:relative;aspect-ratio:1/1;min-height:42px;border:0;border-radius:10px;background:var(--card);font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-shadow:var(--shadow)}
+.day small{font-size:10px;font-weight:600;color:var(--mut);line-height:1}
+.day.no{background:var(--off);color:var(--mut);box-shadow:none}
+.day.closed{background:repeating-linear-gradient(135deg,var(--off),var(--off) 5px,transparent 5px,transparent 9px);color:var(--mut);box-shadow:none}
+.day.in{background:var(--pri-soft);border-radius:0}
+.day.end,.day.start{background:var(--pri);color:var(--onp)}
+.day.end small,.day.start small{color:var(--onp)}
+.day.blank{background:none;box-shadow:none}
+.key{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mut);margin:10px 0 0}
+.sw{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:5px}
+.big{font-size:20px;font-weight:700}
+/* time chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:42px;padding:0 14px;border-radius:999px;border:1px solid var(--field);background:var(--card);font-weight:600;font-size:15px}
+.chip.on{background:var(--pri);border-color:var(--pri);color:var(--onp)}
+.pet{border-top:1px solid var(--line);padding-top:12px;margin-top:4px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.link{word-break:break-all;font-size:14px}
+</style>
+</head>
+<body>
+<div id="app"><p class="mut">Loading…</p></div>
+<script>
+'use strict';
+/* Public page: check open spots and request a stay, or (with ?r=...) see and cancel a request.
+   It only calls the database's public functions (booking_info, booking_days, booking_check,
+   request_spot, request_status, request_cancel). It never sees the schedule or anyone's details. */
+const SUPA = {url:'https://hmkhdmtededcxsjnlqxz.supabase.co', key:'sb_publishable_kNXTM6u_Jl95mmgBpJuzhw_bww2lCiB'};
+const BIZ = 'Little Village Pet Lodge', PHONE = '';
+async function rpc(fn, args = {}){
+  const r = await fetch(SUPA.url+'/rest/v1/rpc/'+fn, {method:'POST', headers:{apikey:SUPA.key, 'Content-Type':'application/json'}, body:JSON.stringify(args)});
+  if(!r.ok) throw new Error('Server said '+r.status);
+  return r.json();
+}
+
+/* ---------- small helpers ---------- */
+function h(tag, attrs, ...kids){
+  const e = document.createElement(tag);
+  for(const k in attrs||{}){ const v = attrs[k]; if(v==null || v===false) continue;
+    if(k.startsWith('on')) e[k] = v; else if(k==='value') e.value = v; else if(k==='html') e.innerHTML = v; else e.setAttribute(k, v===true ? '' : v); }
+  for(const c of kids.flat(Infinity)){ if(c==null || c===false || c==='') continue; e.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return e;
+}
+const pad2 = n => String(n).padStart(2,'0');
+const ymdOf = d => d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+const parseD = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const addDays = (s, n) => { const d = parseD(s); d.setDate(d.getDate()+n); return ymdOf(d); };
+const nightsBetween = (a, b) => Math.round((parseD(b) - parseD(a)) / 864e5);
+const md = s => parseD(s).toLocaleDateString('en-US',{month:'short', day:'numeric'});
+const wmd = s => parseD(s).toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'});
+const t12 = t => { const [a,b] = t.split(':'); return ((+a+11)%12+1)+':'+b+(+a<12 ? ' AM' : ' PM'); };
+const plural = (n, w) => n+' '+w+(n===1 ? '' : 's');
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const fmtPhone = v => { const d = v.replace(/\D/g,'').replace(/^1(?=\d{10}$)/,''); return d.length===10 ? d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6) : v; };
+const toMin = t => +t.slice(0,2)*60 + +t.slice(3);
+const fromMin = m => pad2(Math.floor(m/60))+':'+pad2(m%60);
+
+/* ---------- state ---------- */
+const F = {dogs:1, cats:0, share:true, start:null, end:null, arr:'', pick:'', otherArr:false, otherPick:false,
+  name:'', phone:'', email:'', notes:'', pets:[], month:null};
+let INFO = null, DAYS = {}, CHECK = null, ERR = '', SENDING = false, DONE = null, STATUS = null;
+const need = () => ({d: F.share ? Math.min(F.dogs, 1) : F.dogs, c: F.share ? Math.min(F.cats, 1) : F.cats});
+const firstOK = () => addDays(INFO.today, INFO.lead ?? 1);
+const lastOK = () => addDays(INFO.today, INFO.ahead ?? 180);
+// a night is open when there's room for this group and it isn't closed
+const nightOpen = d => { const x = DAYS[d]; if(!x) return null; const n = need(); return !x.closed && x.dogs >= n.d && x.cats >= n.c; };
+
+async function loadMonth(y, m){
+  const from = ymdOf(new Date(y, m, 1)), to = ymdOf(new Date(y, m+1, 1));
+  try { (await rpc('booking_days', {p_from:from, p_to:to})).forEach(r => DAYS[r.day] = r); }
+  catch(e){ ERR = 'Couldn’t load open dates. Check your connection and refresh.'; }
+  draw();
+}
+async function check(){
+  CHECK = null; draw();
+  if(!F.start || !F.end) return;
+  const s = F.start, e = F.end;
+  try { const c = await rpc('booking_check', {p_start:s, p_end:e}); if(F.start===s && F.end===e){ CHECK = c; draw(); } }
+  catch(err){ CHECK = {ok:false, reason:'Couldn’t check those dates. Try again.'}; draw(); }
+}
+
+/* ---------- pieces ---------- */
+function counter(label, k, min){
+  return h('div',{class:'row', style:'min-height:52px'}, h('b',{}, label),
+    h('div',{class:'cnt'},
+      h('button',{'aria-label':'Fewer '+label.toLowerCase(), disabled:F[k] <= min || null, onclick:()=>{ F[k]--; if(F.dogs+F.cats===0) F[k]++; groupChanged(); }}, '−'),
+      h('b',{}, F[k]),
+      h('button',{'aria-label':'More '+label.toLowerCase(), disabled:F.dogs+F.cats >= 6 || null, onclick:()=>{ F[k]++; groupChanged(); }}, '+')));
+}
+function groupChanged(){
+  // keep the pets list the same length as the counts
+  const want = [...Array(F.dogs)].map(() => 'dog').concat([...Array(F.cats)].map(() => 'cat'));
+  const keep = {dog:F.pets.filter(p=>p.species==='dog'), cat:F.pets.filter(p=>p.species==='cat')};
+  F.pets = want.map(sp => keep[sp].shift() || {species:sp, name:'', breed:''});
+  if(F.start && F.end && !rangeOpen(F.start, F.end)){ F.end = null; }
+  check();
+}
+const rangeOpen = (s, e) => { for(let d = s; d < e; d = addDays(d, 1)) if(nightOpen(d)===false) return false; return true; };
+const closedOn = d => DAYS[d]?.closed;
+
+function tapDay(d){
+  ERR = '';
+  if(!F.start || F.end || d <= F.start){
+    if(nightOpen(d)===false || d < firstOK() || d >= lastOK()) return;
+    F.start = d; F.end = null; F.arr = ''; F.pick = '';
+  } else {
+    if(!rangeOpen(F.start, d) || closedOn(d) || d > lastOK()){ ERR = 'Some nights in between are full or closed. Pick other dates.'; draw(); return; }
+    F.end = d; F.pick = '';
+  }
+  check();
+}
+function monthCal(){
+  const base = F.month || INFO.today.slice(0,7);
+  const [y, m] = base.split('-').map(Number);
+  const first = new Date(y, m-1, 1), lead = first.getDay(), n = new Date(y, m, 0).getDate();
+  if(!DAYS[ymdOf(first)] && !loading[base]){ loading[base] = 1; loadMonth(y, m-1); }
+  const minMonth = INFO.today.slice(0,7), maxMonth = lastOK().slice(0,7);
+  const go = k => { const d = new Date(y, m-1+k, 1); F.month = d.getFullYear()+'-'+pad2(d.getMonth()+1); draw(); };
+  const cells = [];
+  for(let i = 0; i < lead; i++) cells.push(h('div',{class:'day blank'}));
+  for(let i = 1; i <= n; i++){
+    const d = ymdOf(new Date(y, m-1, i)), x = DAYS[d], open = nightOpen(d);
+    const early = d < firstOK() || d > lastOK();
+    // a pickup day only needs the kennel to be open that day, not a free night
+    const pickable = F.start && !F.end && d > F.start && rangeOpen(F.start, d) && !closedOn(d) && d <= lastOK();
+    const cls = ['day'];
+    if(x?.closed) cls.push('closed'); else if(early || (open===false && !pickable)) cls.push('no');
+    if(F.start && F.end && d > F.start && d < F.end) cls.push('in');
+    if(d===F.start) cls.push('start'); if(d===F.end) cls.push('end');
+    const n2 = need(), left = x && !x.closed && !early ? Math.min(...[n2.d && x.dogs, n2.c && x.cats].filter(v => v!==0 && v!=null)) : null;
+    const usable = pickable || (!early && open!==false && !x?.closed);
+    cells.push(h('button',{class:cls.join(' '), disabled:!usable || null, 'aria-label':wmd(d)+(x?.closed ? ', closed' : open===false ? ', full' : ''), onclick:()=>tapDay(d)},
+      i, x?.closed ? h('small',{},'closed') : (!early && open===false) ? h('small',{},'full') : (left!=null && left <= 3 && !early) ? h('small',{}, left+' left') : null));
+  }
+  return [h('div',{class:'mh'},
+      h('button',{'aria-label':'Previous month', disabled:base <= minMonth || null, onclick:()=>go(-1)}, '‹'),
+      h('b',{}, MONTHS[m-1]+' '+y),
+      h('button',{'aria-label':'Next month', disabled:base >= maxMonth || null, onclick:()=>go(1)}, '›')),
+    h('div',{class:'grid'}, ['S','M','T','W','T','F','S'].map(x => h('div',{class:'dow'}, x)), cells),
+    h('div',{class:'key'},
+      h('span',{}, h('span',{class:'sw', style:'background:var(--card);border:1px solid var(--field)'}), 'Open'),
+      h('span',{}, h('span',{class:'sw', style:'background:var(--off)'}), 'Full or not bookable'),
+      h('span',{}, h('span',{class:'sw', style:'background:repeating-linear-gradient(135deg,var(--field),var(--field) 3px,transparent 3px,transparent 6px)'}), 'Closed'))];
+}
+const loading = {};
+
+// the posted drop-off and pickup times for that day, in half hours, plus "another time"
+function timePick(day, k, otherK, label){
+  const w = INFO.hours?.[parseD(day).getDay()] || [];
+  const slots = []; w.forEach(([a,b]) => { for(let m = toMin(a); m <= toMin(b); m += 30) slots.push(fromMin(m)); });
+  const fee = INFO.fee ? ' ($'+INFO.fee+' fee)' : '';
+  const set = v => { F[k] = v; draw(); };
+  const other = [...Array(29)].map((_, i) => fromMin(7*60 + i*30)).filter(t => !slots.includes(t));   // 7 AM to 9 PM
+  return h('div',{class:'f'}, h('span',{class:'lbl'}, label+', '+wmd(day)),
+    h('div',{class:'chips'}, slots.map(t => h('button',{class:'chip'+(F[k]===t ? ' on' : ''), onclick:()=>{ F[otherK] = false; set(t); }}, t12(t))),
+      h('button',{class:'chip'+(F[otherK] ? ' on' : ''), onclick:()=>{ F[otherK] = !F[otherK]; if(!F[otherK] && !slots.includes(F[k])) F[k] = ''; draw(); }}, slots.length ? 'Another time'+fee : 'Pick a time'+fee)),
+    F[otherK] && h('div',{class:'chips', style:'margin-top:8px'}, other.map(t => h('button',{class:'chip'+(F[k]===t ? ' on' : ''), onclick:()=>set(t)}, t12(t)))));
+}
+
+function input(k, label, a = {}){
+  return h('label',{class:'f'}, h('span',{class:'lbl'}, label),
+    h(a.area ? 'textarea' : 'input', {value:F[k], autocomplete:a.ac || 'off', type:a.type || null, inputmode:a.im || null, maxlength:a.max || null,
+      oninput:e => { F[k] = e.target.value; }, onchange:e => { if(k==='phone') e.target.value = F.phone = fmtPhone(F.phone); }}, a.area ? F[k] : null));
+}
+
+async function send(){
+  ERR = '';
+  const n = F.pets.findIndex(p => !p.name.trim());
+  const digits = F.phone.replace(/\D/g,'');
+  ERR = !F.start || !F.end ? 'Pick your dates.' : !F.arr || !F.pick ? 'Pick drop-off and pickup times.'
+    : F.name.trim().length < 2 ? 'Enter your name.' : !(digits.length===10 || (digits.length===11 && digits[0]==='1')) ? 'Enter a phone number with area code.'
+    : n >= 0 ? 'Enter a name for each pet.' : '';
+  if(ERR){ draw(); return; }
+  SENDING = true; draw();
+  try {
+    const r = await rpc('request_spot', {p:{start:F.start, end:F.end, arr:F.arr, pick:F.pick, name:F.name.trim(), phone:F.phone.trim(), email:F.email.trim(), notes:F.notes.trim(),
+      share:F.share, pets:F.pets.map(p => ({name:p.name.trim(), species:p.species, breed:p.breed.trim()}))}});
+    if(r.ok){ DONE = r.token; history.replaceState(null, '', '?r='+r.token); }
+    else { ERR = r.reason; if(/spots|closed|soon|far|shortest/i.test(r.reason)){ DAYS = {}; for(const k in loading) delete loading[k]; check(); } }
+  } catch(e){ ERR = 'Couldn’t send. Check your connection and try again.'; }
+  SENDING = false; draw();
+}
+
+/* ---------- screens ---------- */
+function header(sub){ return [h('div',{class:'biz'}, BIZ), h('h1',{}, sub)]; }
+function formView(){
+  if(!INFO.on) return [header('Request a stay'), h('div',{class:'warn'}, 'Online requests are turned off right now. Please call or text us to book.')];
+  const n = need(), nights = F.start && F.end ? nightsBetween(F.start, F.end) : 0;
+  const room = CHECK && CHECK.ok && [n.d && plural(CHECK.dogs, 'dog spot'), n.c && plural(CHECK.cats, 'cat spot')].filter(Boolean).join(' and ');
+  const enough = CHECK && CHECK.ok && CHECK.dogs >= n.d && CHECK.cats >= n.c;
+  return [header('Request a stay'),
+    h('p',{class:'mut'}, 'See what’s open and send a request. We’ll confirm by text or call. Nothing is booked until we do.'),
+    h('h2',{}, 'Who’s staying?'),
+    h('div',{class:'card'}, counter('Dogs','dogs',0), counter('Cats','cats',0),
+      (F.dogs > 1 || F.cats > 1) && h('div',{style:'margin-top:8px'}, h('span',{class:'lbl'}, 'Can they share a kennel?'),
+        h('div',{class:'seg'}, [[true,'Yes, together'],[false,'No, separate']].map(([v,l]) => h('button',{class:F.share===v ? 'on' : '', onclick:()=>{ F.share = v; groupChanged(); }}, l))))),
+    h('h2',{}, F.start && !F.end ? 'Now pick the pickup day' : 'Pick drop-off, then pickup'),
+    h('div',{class:'card'}, monthCal()),
+    F.start && h('div',{class:'card'},
+      h('div',{class:'big'}, md(F.start)+(F.end ? ' – '+md(F.end) : ' – ?')),
+      F.end && h('div',{class:'mut'}, plural(nights,'night')),
+      F.end && (!CHECK ? h('p',{class:'mut', style:'margin:8px 0 0'}, 'Checking…')
+        : !CHECK.ok ? h('div',{class:'warn'}, CHECK.reason)
+        : enough ? h('div',{class:'ok'}, h('b',{}, room+' open'), ' for those dates.')
+        : h('div',{class:'warn'}, 'Not enough room for those dates. Try other days.'))),
+    ERR && !F.end && h('div',{class:'err'}, ERR),
+    enough && [
+      h('h2',{}, 'Times'),
+      timePick(F.start, 'arr', 'otherArr', 'Drop-off'),
+      timePick(F.end, 'pick', 'otherPick', 'Pickup'),
+      h('h2',{}, 'About you'),
+      input('name','Your name',{ac:'name', max:80}),
+      h('div',{class:'two'}, input('phone','Phone',{type:'tel', ac:'tel', im:'tel', max:20}), input('email','Email (optional)',{type:'email', ac:'email', max:120})),
+      h('h2',{}, F.pets.length===1 ? 'Your pet' : 'Your pets'),
+      h('div',{class:'card'}, F.pets.map((p, i) => h('div',{class:i ? 'pet' : ''},
+        h('div',{class:'mut', style:'font-weight:600;margin-bottom:6px'}, (p.species==='dog' ? 'Dog' : 'Cat')+(F.pets.length > 1 ? ' '+(i+1) : '')),
+        h('div',{class:'two'},
+          h('label',{class:'f'}, h('span',{class:'lbl'},'Name'), h('input',{value:p.name, maxlength:40, autocomplete:'off', oninput:e=>{ p.name = e.target.value; }})),
+          h('label',{class:'f'}, h('span',{class:'lbl'},'Breed'), h('input',{value:p.breed, maxlength:60, autocomplete:'off', oninput:e=>{ p.breed = e.target.value; }})))))),
+      input('notes','Anything we should know? (optional)',{area:true, max:1000}),
+      ERR && h('div',{class:'err', role:'alert'}, ERR),
+      h('button',{class:'b', disabled:SENDING || null, onclick:send}, SENDING ? 'Sending…' : 'Send request'),
+      h('p',{class:'mut', style:'margin-top:10px'}, 'We hold your spot for a little while until we reply.')]];
+}
+function doneView(){
+  const link = location.origin + location.pathname + '?r=' + DONE;
+  return [header('Request sent'),
+    h('div',{class:'ok'}, 'Thanks, '+F.name.trim().split(/\s+/)[0]+'! We got your request for '+md(F.start)+' – '+md(F.end)+' and will text or call you soon.'),
+    h('p',{}, 'This link shows your request’s status, and lets you cancel it. Save it or bookmark this page.'),
+    h('div',{class:'card link'}, link),
+    h('button',{class:'b2', onclick:e=>{ navigator.clipboard?.writeText(link).then(() => { e.target.textContent = 'Copied'; }); }}, 'Copy link')];
+}
+function statusView(){
+  if(STATUS===null) return [header('Your request'), h('p',{class:'mut'},'Loading…')];
+  if(!STATUS) return [header('Your request'), h('div',{class:'warn'}, 'We couldn’t find that request. Check the link.'), h('a',{href:location.pathname, class:'lk'}, 'Make a new request')];
+  const s = STATUS, label = {pending:'Waiting for our reply', approved:'Booked', declined:'Not booked', cancelled:'Cancelled', expired:'Expired'}[s.status];
+  const names = s.pets.map(p => p.name).join(', ');
+  return [header('Your request'),
+    h('div',{class:s.status==='approved' ? 'ok' : s.status==='pending' ? 'card' : 'warn'}, h('b',{}, label),
+      s.status==='pending' ? h('div',{class:'mut'}, 'We’ll text or call you soon.')
+      : s.status==='expired' ? h('div',{}, 'We didn’t get to it in time. Please call us or send a new request.') : null),
+    s.reply && h('div',{class:'card'}, h('span',{class:'lbl'}, 'Note from us'), s.reply),
+    h('div',{class:'card'},
+      h('div',{}, h('b',{}, 'Drop-off '), wmd(s.start)+', '+t12(s.arr)),
+      h('div',{}, h('b',{}, 'Pickup '), wmd(s.end)+', '+t12(s.pick)),
+      h('div',{class:'mut'}, names)),
+    (s.status==='pending' || s.status==='approved') && (CONFIRM
+      ? h('div',{class:'card'}, h('p',{}, 'Cancel this '+(s.status==='approved' ? 'stay' : 'request')+'?'),
+          h('div',{class:'two'}, h('button',{class:'b2', onclick:()=>{ CONFIRM = false; draw(); }}, 'Keep it'),
+            h('button',{class:'b', style:'background:var(--bad);color:var(--bg)', onclick:cancelIt}, 'Yes, cancel')))
+      : h('button',{class:'lk bad', onclick:()=>{ CONFIRM = true; draw(); }}, s.status==='approved' ? 'Cancel this stay' : 'Cancel this request')),
+    ERR && h('div',{class:'err'}, ERR),
+    (s.status==='declined' || s.status==='cancelled' || s.status==='expired') && h('a',{href:location.pathname, class:'lk', style:'display:inline-block'}, 'Make a new request')];
+}
+let CONFIRM = false;
+async function cancelIt(){
+  try { await rpc('request_cancel', {p_token:TOKEN}); CONFIRM = false; STATUS = await rpc('request_status', {p_token:TOKEN}) || false; }
+  catch(e){ ERR = 'Couldn’t cancel. Check your connection and try again.'; }
+  draw();
+}
+
+function draw(){
+  const app = document.getElementById('app');
+  const y = scrollY, a = document.activeElement, focusId = a && a.closest('label') ? [...app.querySelectorAll('input,textarea')].indexOf(a) : -1;
+  app.replaceChildren(...[TOKEN ? statusView() : DONE ? doneView() : INFO ? formView() : [header('Request a stay'), h(ERR ? 'div' : 'p', {class:ERR ? 'err' : 'mut'}, ERR || 'Loading…')]].flat(Infinity).filter(Boolean));
+  if(focusId >= 0) app.querySelectorAll('input,textarea')[focusId]?.focus();
+  scrollTo(0, y);
+}
+
+const TOKEN = new URLSearchParams(location.search).get('r');
+(async () => {
+  if(TOKEN){
+    draw();
+    try { STATUS = /^[0-9a-f-]{36}$/i.test(TOKEN) && await rpc('request_status', {p_token:TOKEN}) || false; } catch(e){ STATUS = false; }
+    draw(); return;
+  }
+  try { INFO = await rpc('booking_info'); F.month = INFO.today.slice(0,7); groupChanged(); }
+  catch(e){ ERR = 'Couldn’t load. Check your connection and refresh.'; }
+  draw();
+})();
+</script>
+</body>
+</html>
