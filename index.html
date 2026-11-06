@@ -144,6 +144,7 @@ body.typing .sh>.ft{position:static;border-top:0}
 .kr{display:flex;height:44px}
 .kr:nth-child(even){background:var(--row)}
 .kr .lab{font-size:12px;font-weight:600;color:var(--mut);padding-left:10px;display:flex;align-items:center;overflow:hidden;white-space:nowrap}
+.cagerow .lab{color:var(--pri)}
 .lane{flex:1;position:relative;display:flex;min-width:0}
 .lane>.cell{flex:1;min-width:0;border:0;border-left:1px solid var(--line);background:none;padding:0}
 .bar{position:absolute;top:4px;height:24px;z-index:2;border:0;border-radius:6px;padding:0 6px;color:#fff;font-size:11px;font-weight:600;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:24px}
@@ -533,7 +534,8 @@ const U = {open:new Set(), tab:'cal', wk:weekStart(today()), day:null, q:'', sh:
 
 const tag = id => S.tags.find(t=>t.id===id) || {id, name:'(deleted tag)', color:'#6B7280', del:true};
 const liveTag = t => !t.del && !t.arch;
-const kennel = id => S.kennels.find(k=>k.id===id) || {id, name:'(removed)'};
+const OWN = {id:'own', name:'Own cage'};
+const kennel = id => id==='own' ? OWN : S.kennels.find(k=>k.id===id) || {id, name:'(removed)'};
 const client = id => S.clients.find(c=>c.id===id);
 const findPet = id => { for(const c of S.clients) for(const p of c.pets) if(p.id===id) return {p,c}; return null; };
 const petNames = s => s.pets.map(i=>findPet(i)?.p.name || '?').join(' & ');
@@ -542,7 +544,8 @@ const withFam = s => petNames(s) + (famOf(s) ? ' ('+famOf(s)+')' : '');
 const stayClient = s => findPet(s.pets[0])?.c;
 const stayStart = s => stamp(s.start, s.arr), stayEnd = s => stamp(s.end, s.pick);
 const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
-const clash = (f, kennelId) => { const mine = pieces({...f, kennel:kennelId}).filter(p => p.k===kennelId);
+const clash = (f, kennelId) => { if(kennelId==='own') return null;
+  const mine = pieces({...f, kennel:kennelId}).filter(p => p.k===kennelId);
   return S.stays.find(s => s.id!==f.id && s.status!=='out' && pieces(s).some(q => q.k===kennelId && mine.some(p => piecesOverlap(p, q)))); };
 const statusColor = s => s.status==='out' ? (s.paid ? '#4B5563' : '#B45309') : s.status==='in' ? '#0F766E' : '#1D4ED8';
 const statusText = s => s.status==='out' ? (s.paid ? 'Out, paid' : 'Out, unpaid') : STATUS[s.status];
@@ -874,12 +877,18 @@ function calView(){
   const showsToday = w<=td && td<=end;
   const kf = showsToday ? (S.kf || 'all') : 'all';   // All the first time, then whatever was picked last on this phone
   const shown = kf==='week' ? inView : kf==='now' ? hereNow : S.kennels;
-  const rows = shown.map(k => {
+  // pets in their own cages get rows of their own under the kennels, only while there's one in view
+  const cageLanes = [];
+  viewStays.forEach(s => pieces(s).forEach(pc => { if(pc.k!=='own' || pc.d>end || pc.e<w) return;
+    let L = cageLanes.find(l => l.every(q => !piecesOverlap(q, pc))); if(!L) cageLanes.push(L = []); L.push({...pc, sid:s.id}); }));
+  const rowDefs = shown.map(k => ({k, has:pc => pc.k===k.id}))
+    .concat(cageLanes.map(L => ({k:{id:'own', name:'Cage'}, cage:true, has:(pc, s) => pc.k==='own' && L.some(q => q.sid===s.id && q.d===pc.d && q.t===pc.t)})));
+  const rows = rowDefs.map(({k, has, cage}) => {
     const lane = h('div',{class:'lane'},
-      days.map(d => h('button',{class:'cell'+(parseD(d).getDay()===0 && wide ? ' wkstart' : ''), 'aria-label':'New stay in '+k.name+' on '+md(d),
+      days.map(d => h('button',{class:'cell'+(parseD(d).getDay()===0 && wide ? ' wkstart' : ''), 'aria-label':'New stay in '+(cage ? 'an own cage' : k.name)+' on '+md(d),
         onclick:()=>open({t:'form', f:newStayDraft(k.id, d)})})));
     for(const s of viewStays) for(const pc of pieces(s)){
-      if(pc.k!==k.id || pc.d>end || pc.e<w) continue;
+      if(!has(pc, s) || pc.d>end || pc.e<w) continue;
       const moved = pc.d!==s.start || pc.t!==s.arr, moves = pc.e!==s.end || pc.et!==s.pick;
       const a = pc.d<w ? 0 : (daysBetween(w,pc.d) + calFrac(pc.t))/n;
       const b = pc.e>end ? 1 : (daysBetween(w,pc.e) + calFrac(pc.et))/n;
@@ -909,7 +918,7 @@ function calView(){
         h('div',{class:'trk', style:pos+`background:color-mix(in srgb, ${statusColor(s)} 22%, transparent)`}),
         ...marks.map(m => h('div',{class:'pip'+(m.done?' done':''), title:m.tg.name+' '+t12(m.tm), style:`left:calc(${m.x*100}% + ${m.k*3}px);background:${m.tg.color}`})));
     }
-    return h('div',{class:'kr'}, h('div',{class:'lab'}, k.name), lane);
+    return h('div',{class:'kr'+(cage ? ' cagerow' : '')}, h('div',{class:'lab', title:cage ? 'Own cage (brought along)' : null}, k.name), lane);
   });
 
   // grey over the past, red line at now
@@ -1205,7 +1214,8 @@ function pickKennel(u){
     items: () => S.kennels.map(k => { const hit = clash(f, k.id);
       return {id:k.id, label:k.name, on:k.id===f.kennel,
         pill: hit ? h('span',{class:'pill'},'taken') : h('span',{class:'pill ok'},'free'),
-        sub: hit ? withFam(hit)+' · '+md(hit.start)+' – '+md(hit.end) : ''}; }),
+        sub: hit ? withFam(hit)+' · '+md(hit.start)+' – '+md(hit.end) : ''}; })
+      .concat({id:'own', label:'Own cage', on:f.kennel==='own', sub:'They brought their own cage or enclosure. Uses no kennel.'}),
     onPick: id => { f.kennel = id; u.err = ''; }});
 }
 
@@ -1298,7 +1308,7 @@ function moveSheet(u){
     h('div',{class:'row start wrap', style:'margin:-4px 0 12px'}, chip('Whole stay', whole, ()=>{ f.date = s.start; f.time = s.arr; render(); }),
       s.start <= td && td <= s.end && chip('Now', isNow, ()=>{ f.date = td; f.time = now; render(); })),
     h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'}, 'Move to'),
-    h('div',{class:'plist'}, S.kennels.map(k => { const hit = k.id!==cur && clash(rest(k.id), k.id);
+    h('div',{class:'plist'}, [...S.kennels, OWN].map(k => { const hit = k.id!==cur && clash(rest(k.id), k.id);
       return h('button',{class:'pitem', disabled:k.id===cur || !!hit, onclick:()=>go(k.id)},
         h('div',{class:'grow'}, h('div',{class:'t'}, k.name), h('div',{class:'s'}, k.id===cur ? (whole ? 'Booked here' : isNow ? 'In it now' : 'In it then') : hit ? 'Taken: '+withFam(hit) : 'Free')),
         k.id!==cur && !hit && h('span',{class:'pill ok'},'free')); })),
@@ -2060,13 +2070,15 @@ const reqStays = r => (r.stay_id||'').split(',').filter(id => S.stays.some(s => 
 const reqWaiting = () => R.list.filter(r => reqHeld(r) || (r.status==='cancelled' && reqStays(r).length));
 const firstName = n => (n||'').trim().split(/\s+/)[0] || '';
 const lastName = n => { const w = (n||'').trim().split(/\s+/); return w.length > 1 ? w[w.length-1] : w[0] || ''; };
-const reqPetsText = r => { const nd = r.pets.filter(p=>p.species==='dog').length, nc = r.pets.length - nd;
-  return [nd && plural(nd,'dog'), nc && plural(nc,'cat')].filter(Boolean).join(', '); };
+const reqPetsText = r => { const n = sp => r.pets.filter(p => p.species===sp).length;
+  return [n('dog') && plural(n('dog'),'dog'), n('cat') && plural(n('cat'),'cat'), n('other') && plural(n('other'),'other pet')].filter(Boolean).join(', '); };
 // "Rex and Fido share a kennel. Max has his own." from the kennel letters (or the old yes/no)
 function reqShareText(r){
   if(!r.pets.some(p => p.group)) return r.share ? 'Can share a kennel' : 'Want separate kennels';
-  const by = {}; r.pets.forEach(p => (by[p.species+'|'+p.group] ||= []).push(p.name.trim()));
+  const by = {}; r.pets.forEach(p => { if(p.species!=='other') (by[p.species+'|'+p.group] ||= []).push(p.name.trim()); });
   const groups = Object.values(by);
+  if(!groups.length) return '';
+  if(groups.length===1 && groups[0].length===1) return '';
   if(groups.every(a => a.length===1)) return 'Each has their own kennel.';
   return groups.map(a => a.length > 1 ? petList(a)+' share a kennel.' : a[0]+' has their own kennel.').join(' ');
 }
@@ -2160,7 +2172,8 @@ function reqSheet(u){
       line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : S.book.eveFee && r.pick >= (S.book.eveFrom||'16:00') ? ' (evening pickup, $'+S.book.eveFee+')' : '')),
       h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
     h('div',{class:'sec'},'Pets'),
-    h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : 'Dog')+(p.breed ? ', '+p.breed : ''))),
+    h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : p.species==='other' ? (p.kind || 'Other') : 'Dog')+(p.breed ? ', '+p.breed : '')
+        +(p.species==='other' ? (p.cage===false ? ' · needs a cage or condo' : ' · bringing a cage') : ''))),
       r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r))),
     h('div',{class:'sec'},'Contact'),
     h('div',{class:'card'},
@@ -2180,23 +2193,25 @@ function approveReq(r, famId){
   if(!c){ c = fillClient({id:uid('c'), first:firstName(r.name), name:lastName(r.name), cell:fmtPhone(r.phone), email:r.email||''}); S.clients.push(c); }
   const ids = r.pets.map(p => {
     let q = c.pets.find(x => x.name.toLowerCase()===p.name.trim().toLowerCase());
-    if(!q){ q = newPet(p.name.trim(), p.species); q.breed = p.breed || ''; c.pets.push(q); }
+    if(!q){ q = newPet(p.name.trim(), p.species); q.breed = p.breed || ''; if(p.species==='other') q.other = p.kind || ''; c.pets.push(q); }
     return q.id;
   });
   save();
+  r._own = ids.filter((id, i) => r.pets[i].species==='other' && r.pets[i].cage!==false);   // brought their own cage
   // which pets go together: one kennel per kind when they share, else one each
-  const kindOf = id => findPet(id).p.species==='cat' ? 'cat' : 'dog';
+  const kindOf = id => findPet(id).p.species==='dog' ? 'dog' : 'cat';   // other pets go where cats do
   // pets with the same kennel letter go together; older requests had one yes/no for sharing
   const lettered = r.pets.some(p => p.group);
-  const groups = lettered ? Object.values(r.pets.reduce((m, p, i) => { (m[kindOf(ids[i])+'|'+(p.group||i)] ||= []).push(ids[i]); return m; }, {}))
+  const groups = lettered ? Object.values(r.pets.reduce((m, p, i) => { (m[kindOf(ids[i])+'|'+(p.species==='other' ? 'other'+i : p.group||i)] ||= []).push(ids[i]); return m; }, {}))
     : r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
   openReqStay(r, c.id, groups, []);
 }
 function openReqStay(r, cid, groups, made){
   const [pets, ...rest] = groups;
   const f = {id:null, client:cid, pets, start:r.start_date, arr:r.arr, end:r.end_date, pick:r.pick, notes:r.notes||'', belongings:'', req:r.id, queue:rest, made};
-  const kind = findPet(pets[0]).p.species==='cat' ? 'cat' : 'dog';
+  const kind = findPet(pets[0]).p.species==='dog' ? 'dog' : 'cat';
   const taken = new Set(made.map(id => S.stays.find(s=>s.id===id)?.kennel));
+  if(pets.every(id => (r._own||[]).includes(id))){ f.kennel = 'own'; open({t:'form', f}); return; }
   f.kennel = (S.kennels.find(k => bookKind(k)===kind && !taken.has(k.id) && !clash(f, k.id)) || S.kennels.find(k => !clash(f, k.id)) || S.kennels[0]).id;
   open({t:'form', f});
 }
