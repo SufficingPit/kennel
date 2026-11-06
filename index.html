@@ -775,7 +775,7 @@ function calView(){
   const hereNow = S.kennels.filter(k => S.stays.some(s=>s.kennel===k.id && s.status==='in'));
   // the filter only means something while today is in view; other dates show every kennel
   const showsToday = w<=td && td<=end;
-  const kf = showsToday ? (S.kf || 'week') : 'all';
+  const kf = showsToday ? (S.kf || 'all') : 'all';   // All the first time, then whatever was picked last on this phone
   const shown = kf==='week' ? inView : kf==='now' ? hereNow : S.kennels;
   const rows = shown.map(k => {
     const lane = h('div',{class:'lane'},
@@ -819,9 +819,10 @@ function calView(){
     h('div',{style:`position:absolute;left:0;top:0;bottom:0;width:${X*100}%;background:var(--shade)`}),
     X>0 && X<1 && h('div',{style:`position:absolute;top:0;bottom:0;left:${X*100}%;width:2px;margin-left:-1px;background:var(--bad)`}));
 
-  let grid = h('div',{class:'wk', style: wide ? `width:${46 + n*COL}px` : ''}, head,
-    rows.length ? rows : h('p',{class:'empty', style:'position:sticky;left:0;width:min(100vw,560px)'}, kf==='now' ? 'No pets checked in right now.' : 'No stays in these dates.'), overlay);
-  if(wide){
+  // when the filter leaves no kennels, a plain message instead of an empty grid with a now line through it
+  let grid = rows.length ? h('div',{class:'wk', style: wide ? `width:${46 + n*COL}px` : ''}, head, rows, overlay)
+    : h('p',{class:'empty', style:'padding-top:40px'}, kf==='now' ? 'No pets checked in right now.' : U.range ? 'No stays in these dates.' : 'No stays this week.');
+  if(wide && rows.length){
     const sc = h('div',{class:'wkx', 'data-range':w+'_'+end}, grid);
     const slide = () => sc.querySelectorAll('.bar').forEach(bar => {
       const shift = Math.max(0, Math.min(sc.scrollLeft - bar.offsetLeft, bar.offsetWidth - 70));
@@ -852,11 +853,12 @@ function calView(){
         [['all','All',S.kennels.length],['week', U.range ? 'In range' : 'This week', inView.length],['now','Here now',hereNow.length]].map(([v,l,c]) =>
           h('button',{class:kf===v?'on':'', 'aria-pressed':kf===v?'true':'false', onclick:()=>{ S.kf=v; commit(); }}, l, h('span',{class:'n'}, c))))),
     grid,
-    h('div',{class:'lg'},
+    // the keys only explain bars, so they wait until there's a stay on screen
+    shown.some(k => viewStays.some(s => s.kennel===k.id)) && [h('div',{class:'lg'},
       [['#1D4ED8','Booked'],['#0F766E','In kennel'],['#4B5563','Out, paid'],['#B45309','Out, unpaid']].map(([c,t]) => h('span',{}, h('span',{class:'sw',style:'background:'+c}), t)),
       h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet')),
     calTags.length>0 && h('div',{class:'lg'}, h('span',{},'Care:'),
-      calTags.map(t => h('span',{}, h('span',{class:'sw', style:'width:3px;height:10px;border-radius:2px;background:'+t.color}), t.name)), h('span',{},'(faded = done)'))
+      calTags.map(t => h('span',{}, h('span',{class:'sw', style:'width:3px;height:10px;border-radius:2px;background:'+t.color}), t.name)), h('span',{},'(faded = done)'))]
   ];
 }
 
@@ -978,6 +980,8 @@ function dayView(){
     h('span',{}, dot('background:var(--mut)', check()), 'Done'),
     h('span',{}, dot('background:var(--mut);opacity:.4'), 'Not checked in'));
   const tl = timeline(D);
+  if(!tl && !arrivals.length && !pickups.length && !items.length)
+    return [nav, h('p',{class:'empty', style:'padding-top:40px'}, D===td ? 'No pets in kennels today.' : 'No pets in kennels this day.')];
   return [nav, tl, tl && legend,
     h('div',{class:'pad'},
       arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
@@ -1005,7 +1009,7 @@ function clientsView(){
     const res = S.clients.filter(c=>matchClient(c, U.q.trim().toLowerCase())).sort(byName);
     list.replaceChildren(...(res.length ? res.map(c => h('button',{class:'card row', onclick:()=>open({t:'client',id:c.id})},
       h('div',{class:'grow'}, h('b',{}, c.name+' family'), h('div',{class:'mut'}, clientLine(c))),
-      h('span',{class:'mut'},'›'))) : [h('p',{class:'empty'}, 'No family matches “'+U.q.trim()+'”.')]));
+      h('span',{class:'mut'},'›'))) : [h('p',{class:'empty', style:U.q.trim() ? '' : 'padding-top:40px'}, U.q.trim() ? 'No family matches “'+U.q.trim()+'”.' : 'No families yet.')]));
   };
   draw();
   return [h('div',{class:'top hdr'}, h('h1',{},'Clients'), btn('+ New family', ()=>open({t:'client', name:U.q.trim()}), 'chip add')),
