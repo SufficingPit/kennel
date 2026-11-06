@@ -49,6 +49,12 @@ button.card{width:100%;border:0;text-align:left}
 .docrow{display:flex;align-items:center;gap:10px;min-height:48px}
 .stepr{display:flex;align-items:center;gap:10px}
 .stv{min-width:120px;text-align:center;font-weight:600}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.pgrid button{position:relative;padding:0;border:2px solid transparent;border-radius:12px;overflow:hidden;aspect-ratio:1/1;background:var(--card)}
+.pgrid button.on{border-color:var(--pri);box-shadow:0 0 0 2px var(--pri)}
+.pgrid img{width:100%;height:100%;object-fit:cover;display:block}
+.pgrid .pck{position:absolute;top:5px;right:5px;width:24px;height:24px;border-radius:12px;background:var(--pri);color:var(--onp);display:grid;place-items:center}
+.pgrid .pcap{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 5px;color:#fff;font-size:11px;font-weight:600;line-height:1.2;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.65));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .docimg{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#fff;margin:4px 0 12px}
 .row.start{justify-content:flex-start}
 .wrap{flex-wrap:wrap}
@@ -1675,68 +1681,111 @@ function websiteSection(){
       h('a',{class:'lk', href:SITE_URL, target:'_blank', rel:'noopener', style:'display:inline-flex;align-items:center;text-decoration:none'}, 'View website'))];
 }
 
+// built-in pictures that live with the website (not in the gallery)
+const SITE_BUILTIN = {lineup:{src:'img/banner.jpg', cap:'Row of animals', fit:'contain'}, lookup:{src:'img/lookup.jpg', cap:'Cat looking up'}};
+// a grid of thumbnails to pick one picture from
+function photoPicker(W, key, builtins){
+  const opts = builtins.map(id => ({id, ...SITE_BUILTIN[id]})).concat(W.photos);
+  return h('div',{class:'pgrid', role:'radiogroup'}, opts.map(p => {
+    const on = W[key]===p.id;
+    return h('button',{class:on ? 'on' : '', role:'radio', 'aria-checked':on ? 'true' : 'false', 'aria-label':p.cap || 'Photo', title:p.cap || '',
+      onclick:()=>{ W[key] = p.id; S.site = W; save(); render(); }},
+      h('img',{src:sitePhotoURL(p.sm || p.src), alt:'', loading:'lazy', style:p.fit==='contain' ? 'object-position:45% 100%;background:#fff' : ''}),
+      on && h('span',{class:'pck'}, check()));
+  }));
+}
+
 function siteSheet(u){
   const W = S.site || (u.draft ||= defaultSite());
-  const sv = () => { S.site = W; save(); };
-  const redraw = () => { sv(); render(); };
+  const sv = () => { S.site = W; U.siteSaved = Date.now(); save(); quietRender(); };
+  const redraw = () => { S.site = W; U.siteSaved = Date.now(); save(); render(); };
   const g = (id, title, summary, body) => group('w-'+id, title, summary, body);
-  const mini = (o, k, ph, a={}) => h('input',{value:o[k]||'', placeholder:ph, autocomplete:'off', 'aria-label':ph, style:a.style||'', onchange:e=>{ o[k] = e.target.value.trim(); sv(); }});
+  const mini = (o, k, ph, a={}) => h('input',{value:o[k]||'', placeholder:ph, autocomplete:'off', 'aria-label':a.label || ph, inputmode:a.im || null, style:a.style||'', onchange:e=>{ o[k] = e.target.value.trim(); sv(); }});
+  const help = t => h('p',{class:'mut', style:'margin:-4px 0 12px;font-size:13px'}, t);
+  const colHead = (...cols) => h('div',{class:'row', style:'margin:0 0 4px;font-size:12px;font-weight:600;color:var(--mut)'}, cols.map(([t, st]) => h('span',{style:st||''}, t)));
   const up = U.upl && U.upl.pet==='site' ? U.upl : null;
-  const move = (i, d) => { const a = W.photos, j = i + d; if(j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; redraw(); };
+  const saved = U.siteSaved && Date.now() - U.siteSaved < 120e3;
   return sheet('Website', [
-    h('p',{class:'mut', style:'margin-top:0'}, DEMO ? 'This is the demo, so changes here don’t reach the real website.' : 'Changes show on the website about a minute after you make them.',
-      ' ', h('a',{href:SITE_URL, target:'_blank', rel:'noopener'}, 'View website')),
+    h('div',{class:'row', style:'margin:0 0 12px'},
+      h('span',{class:'mut', style:'font-size:13px'}, DEMO ? 'This is the demo, so changes don’t reach the real website.'
+        : saved ? h('span',{style:'display:inline-flex;align-items:center;gap:5px;color:var(--pri);font-weight:600'}, check(), 'Saved. The website shows it within a minute.') : 'Changes save as you go and show on the website within a minute.'),
+      h('a',{class:'b2 sm', href:SITE_URL, target:'_blank', rel:'noopener', style:'display:inline-flex;align-items:center;text-decoration:none;flex:none'}, 'View website')),
     g('notice','Notice at the top', W.notice || 'None', [
-      h('p',{class:'mut', style:'margin-top:0'},'A short message shown at the top of the website, like holiday closures. Leave it empty for none.'),
+      help('A short message in a pink banner at the top, like holiday closures. Leave it empty for none.'),
       tf(W,'notice','Notice',sv,{area:true, ph:'e.g. Closed Dec 24–26. Merry Christmas!'})]),
     g('top','Top of the page', W.headline, [
       tf(W,'headline','Headline',sv),
+      help('The last three words show in green.'),
       tf(W,'intro','Under the headline',sv,{area:true}),
-      field('Big photo', h('div',{class:'chips', style:'margin:0'}, chip('Row of animals', W.hero==='lineup', ()=>{ W.hero = 'lineup'; redraw(); }),
-        W.photos.map(p => chip(p.cap || 'Photo', W.hero===p.id, ()=>{ W.hero = p.id; redraw(); })))),
-      tf(W,'heroTag','Label on the photo (optional)',sv)]),
+      field('Big picture', photoPicker(W, 'hero', ['lineup'])),
+      W.hero!=='lineup' && tf(W,'heroTag','Label on the picture (optional)',sv,{ph:'e.g. Hi, I’m Clio!'})]),
     g('board','Boarding', W.cards.map(c => c.title).join(', '), [
       tf(W,'boardIntro','Intro',sv,{area:true}),
-      W.cards.map(c => h('div',{class:'card'}, tf(c,'title','Title',sv), tf(c,'text','Text (a blank line starts a new paragraph)',sv,{area:true}), tf(c,'vax','Vaccines line',sv))),
-      tf(W,'vaxNote','Vaccine note',sv,{area:true})]),
+      W.cards.map(c => h('div',{class:'card'}, tf(c,'title','Title',sv), tf(c,'text','Text',sv,{area:true}), tf(c,'vax','Vaccines line',sv))),
+      help('In longer text, a blank line starts a new paragraph.'),
+      tf(W,'vaxNote','Vaccine note under the boxes',sv,{area:true})]),
     g('prices','Prices', W.prices.map(p => p.label+' '+p.price).join(' · '), [
-      h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'},'Per night'),
-      W.prices.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch'}, mini(p,'label','What'), mini(p,'sub','per…',{style:'max-width:78px;padding:0 8px'}), mini(p,'price','$',{style:'max-width:62px;padding:0 8px'}),
-        btn('×', ()=>{ W.prices.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+p.label, style:'min-width:32px'}))),
-      btn('+ Add price', ()=>{ W.prices.push({label:'', sub:'', price:''}); redraw(); }, 'chip add'),
-      tf(W,'shareNote','Note under prices',sv,{area:true}),
-      h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:14px 0 6px'},'Extras'),
-      W.extras.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch'}, mini(p,'label','What'), mini(p,'price','+$',{style:'max-width:62px;padding:0 8px'}),
-        btn('×', ()=>{ W.extras.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+p.label, style:'min-width:32px'}))),
-      btn('+ Add extra', ()=>{ W.extras.push({label:'', price:''}); redraw(); }, 'chip add'),
+      h('div',{class:'lbl mut', style:'font-weight:700;font-size:13px;margin:0 0 8px'},'Per night'),
+      colHead(['Name','flex:1'], ['Per','width:78px'], ['Price','width:62px'], ['','width:32px']),
+      W.prices.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch;gap:6px'}, mini(p,'label','e.g. Dogs',{label:'Name'}), mini(p,'sub','per dog',{label:'Per', style:'width:78px;flex:none;padding:0 8px'}), mini(p,'price','$25',{label:'Price', style:'width:62px;flex:none;padding:0 8px'}),
+        btn('×', ()=>{ W.prices.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+(p.label || 'this price'), style:'min-width:32px;flex:none'}))),
+      btn('+ Add a price', ()=>{ W.prices.push({label:'', sub:'', price:''}); redraw(); }, 'chip add'),
+      tf(W,'shareNote','Note under the prices',sv,{area:true}),
+      h('div',{class:'lbl mut', style:'font-weight:700;font-size:13px;margin:16px 0 8px'},'Extras'),
+      colHead(['Name','flex:1'], ['Price','width:62px'], ['','width:32px']),
+      W.extras.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch;gap:6px'}, mini(p,'label','e.g. Medications given',{label:'Name'}), mini(p,'price','+$2',{label:'Price', style:'width:62px;flex:none;padding:0 8px'}),
+        btn('×', ()=>{ W.extras.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+(p.label || 'this extra'), style:'min-width:32px;flex:none'}))),
+      btn('+ Add an extra', ()=>{ W.extras.push({label:'', price:''}); redraw(); }, 'chip add'),
       tf(W,'payNote','Payment note',sv,{area:true})]),
-    g('photos','Photos', plural(W.photos.length,'photo'), [
-      h('p',{class:'mut', style:'margin-top:0'},'Shown in the gallery, in this order. Tap a caption to change it.'),
-      W.photos.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px'},
-        h('img',{src:sitePhotoURL(p.sm || p.src), alt:'', style:'width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none'}),
-        h('div',{class:'grow'}, mini(p,'cap','Caption')),
-        btn('↑', ()=>move(i,-1), 'ic', {'aria-label':'Move up', disabled:i===0, style:'min-width:36px;font-size:18px'}),
-        btn('↓', ()=>move(i,1), 'ic', {'aria-label':'Move down', disabled:i===W.photos.length-1, style:'min-width:36px;font-size:18px'}),
-        btn('×', ()=>confirmSheet('Remove this photo?', 'Takes it off the website.', 'Remove', ()=>{ W.photos.splice(i,1); if(W.hero===p.id) W.hero = W.photos[0]?.id || ''; S.site = W; U.sh = u; }, u), 'ic', {'aria-label':'Remove photo'}))),
-      up && !up.err ? h('p',{class:'mut'},'Uploading…')
+    g('photos','Gallery photos', plural(W.photos.length,'photo'), [
+      help('Shown in this order. Tap a photo to see it big, change its caption, move it or remove it.'),
+      h('div',{class:'pgrid'}, W.photos.map((p, i) => h('button',{'aria-label':'Photo: '+(p.cap || 'no caption'), onclick:()=>open({t:'sitephoto', id:p.id})},
+        h('img',{src:sitePhotoURL(p.sm || p.src), alt:'', loading:'lazy'}),
+        h('span',{class:'pcap'}, p.cap || 'No caption')))),
+      h('div',{style:'margin-top:10px'}, up && !up.err ? h('p',{class:'mut'},'Uploading…')
         : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add photos',
-            h('input',{type:'file', accept:'image/*', multiple:true, style:'display:none', onchange:e=>addSitePhotos(W, [...e.target.files])})),
+            h('input',{type:'file', accept:'image/*', multiple:true, style:'display:none', onchange:e=>addSitePhotos(W, [...e.target.files])}))),
       up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err)]),
     g('about','About', W.about.slice(0,60)+'…', [
-      tf(W,'about','About us (a blank line starts a new paragraph)',sv,{area:true}),
-      field('Photo beside it', h('div',{class:'chips', style:'margin:0'}, chip('Cat looking up', (W.aboutPhoto||'lookup')==='lookup', ()=>{ W.aboutPhoto = 'lookup'; redraw(); }),
-        W.photos.map(p => chip(p.cap || 'Photo', W.aboutPhoto===p.id, ()=>{ W.aboutPhoto = p.id; redraw(); })))),
-      tf(W,'aboutCap','Caption under that photo (optional)',sv,{ph:'e.g. LOOK UP THERE!'})]),
+      tf(W,'about','About us',sv,{area:true}),
+      help('A blank line starts a new paragraph.'),
+      field('Picture beside it', photoPicker(W, 'aboutPhoto', ['lookup'])),
+      tf(W,'aboutCap','Caption under the picture (optional)',sv,{ph:'e.g. LOOK UP THERE!'})]),
     g('groom','Grooming', W.groomer ? 'Coming soon' : 'Hidden', [
-      h('p',{class:'mut', style:'margin-top:0'},'Shown as a “Coming soon” box. Leave it empty to hide the section.'),
+      help('Shown in a “Coming soon” box. Leave it empty to hide the section.'),
       tf(W,'groomer','Grooming text',sv,{area:true})]),
     g('contact','Contact and directions', W.phone+' · '+W.email, [
-      two(tf(W,'phone','Phone',sv,{type:'tel'}), tf(W,'email','Email',sv)),
-      tf(W,'facebook','Facebook page link',sv),
+      two(tf(W,'phone','Phone',sv,{inputmode:'tel'}), tf(W,'email','Email',sv,{inputmode:'email'})),
+      tf(W,'facebook','Facebook page link',sv,{inputmode:'url'}),
       tf(W,'address','Address',sv),
-      tf(W,'directions','Directions (a blank line starts a new paragraph)',sv,{area:true})]),
+      tf(W,'directions','Directions',sv,{area:true}),
+      help('Drop-off and pickup hours come from Online booking, above.')]),
     S.site && h('div',{style:'margin:20px 0 8px'}, btn('Start over from the original text', ()=>confirmSheet('Start over?', 'Puts back the original website text, prices and photos. Your changes are replaced.', 'Start over', ()=>{ S.site = defaultSite(); U.sh = {t:'site'}; }, u), 'lk bad'))
   ], btn('Done', close));
+}
+
+// one gallery photo, big, with its caption and what to do with it
+function sitePhotoSheet(u){
+  const W = S.site || defaultSite(), i = W.photos.findIndex(p => p.id===u.id), p = W.photos[i];
+  if(!p) return null;
+  const back = () => open({t:'site'});
+  const sv = () => { S.site = W; U.siteSaved = Date.now(); save(); quietRender(); };
+  const move = d => { const j = i + d; if(j < 0 || j >= W.photos.length) return; [W.photos[i], W.photos[j]] = [W.photos[j], W.photos[i]]; S.site = W; save(); render(); };
+  const use = (key, label) => W[key]===p.id ? h('span',{class:'pill ok', style:'margin:0;display:inline-flex;align-items:center;gap:5px;min-height:38px;padding:0 14px'}, check(), label)
+    : btn('Use as '+label.toLowerCase(), ()=>{ W[key] = p.id; S.site = W; save(); render(); }, 'chip');
+  return sheet('Photo '+(i+1)+' of '+W.photos.length, [
+    h('img',{class:'docimg', src:sitePhotoURL(p.src), alt:p.cap || ''}),
+    tf(p,'cap','Caption',sv,{ph:'Add a caption (optional)'}),
+    h('div',{class:'row start wrap', style:'margin:4px 0 12px'},
+      btn('Move earlier', ()=>move(-1), 'chip', {disabled:i===0}), btn('Move later', ()=>move(1), 'chip', {disabled:i===W.photos.length-1})),
+    h('div',{class:'row start wrap'}, use('hero','Big picture'), use('aboutPhoto','About picture')),
+    h('div',{style:'margin:24px 0 8px'}, btn('Remove this photo', ()=>confirmSheet('Remove this photo?', 'Takes it off the website.', 'Remove', ()=>{
+      W.photos.splice(i, 1);
+      if(W.hero===p.id) W.hero = 'lineup';
+      if(W.aboutPhoto===p.id) W.aboutPhoto = 'lookup';
+      S.site = W; U.sh = {t:'site'};
+    }, u), 'lk bad'))
+  ], btn('Done', back), back);
 }
 
 async function addSitePhotos(W, files){
@@ -1747,7 +1796,7 @@ async function addSitePhotos(W, files){
     if(!/^image\//.test(f.type)){ err = 'Only photos can be added.'; continue; }
     try {
       const big = await shrinkImage(f, 1600), small = await shrinkImage(f, 640);
-      const id = uid('w'), p = {id, cap:''};
+      const id = uid('w'), p = {id, cap:''};   // caption added by tapping the photo
       if(DEMO){ p.src = await asDataURL(small); p.sm = p.src; }
       else {
         for(const [name, blob] of [[id+'.jpg', big], [id+'-sm.jpg', small]])
@@ -2402,7 +2451,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
