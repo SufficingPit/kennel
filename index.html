@@ -2062,6 +2062,14 @@ const firstName = n => (n||'').trim().split(/\s+/)[0] || '';
 const lastName = n => { const w = (n||'').trim().split(/\s+/); return w.length > 1 ? w[w.length-1] : w[0] || ''; };
 const reqPetsText = r => { const nd = r.pets.filter(p=>p.species==='dog').length, nc = r.pets.length - nd;
   return [nd && plural(nd,'dog'), nc && plural(nc,'cat')].filter(Boolean).join(', '); };
+// "Rex and Fido share a kennel. Max has his own." from the kennel letters (or the old yes/no)
+function reqShareText(r){
+  if(!r.pets.some(p => p.group)) return r.share ? 'Can share a kennel' : 'Want separate kennels';
+  const by = {}; r.pets.forEach(p => (by[p.species+'|'+p.group] ||= []).push(p.name.trim()));
+  const groups = Object.values(by);
+  if(groups.every(a => a.length===1)) return 'Each has their own kennel.';
+  return groups.map(a => a.length > 1 ? petList(a)+' share a kennel.' : a[0]+' has their own kennel.').join(' ');
+}
 const petList = names => names.length < 3 ? names.join(' and ') : names.slice(0,-1).join(', ')+' and '+names[names.length-1];
 // a time outside the posted hours costs the fee
 const offHours = (d, t) => { const w = S.book.hours[parseD(d).getDay()] || []; return !w.some(([a,b]) => a <= t && t <= b); };
@@ -2153,7 +2161,7 @@ function reqSheet(u){
       h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
     h('div',{class:'sec'},'Pets'),
     h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : 'Dog')+(p.breed ? ', '+p.breed : ''))),
-      r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, r.share ? 'Can share a kennel' : 'Want separate kennels')),
+      r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r))),
     h('div',{class:'sec'},'Contact'),
     h('div',{class:'card'},
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
@@ -2178,7 +2186,10 @@ function approveReq(r, famId){
   save();
   // which pets go together: one kennel per kind when they share, else one each
   const kindOf = id => findPet(id).p.species==='cat' ? 'cat' : 'dog';
-  const groups = r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
+  // pets with the same kennel letter go together; older requests had one yes/no for sharing
+  const lettered = r.pets.some(p => p.group);
+  const groups = lettered ? Object.values(r.pets.reduce((m, p, i) => { (m[kindOf(ids[i])+'|'+(p.group||i)] ||= []).push(ids[i]); return m; }, {}))
+    : r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
   openReqStay(r, c.id, groups, []);
 }
 function openReqStay(r, cid, groups, made){
@@ -2257,9 +2268,9 @@ function demoRequests(){
   const at = h => new Date(Date.now() - h*3600e3).toISOString();
   return [
     {id:uid('r'), created_at:at(3), status:'pending', start_date:addDays(today(), 9), end_date:addDays(today(), 14), arr:'08:30', pick:'16:30', dog_spots:1, cat_spots:0,
-      name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi'},{name:'Hazel', species:'dog', breed:'Golden mix'}], share:true, notes:'Same as last time, thank you!'},
+      name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi', group:'A'},{name:'Hazel', species:'dog', breed:'Golden mix', group:'A'}], share:true, notes:'Same as last time, thank you!'},
     {id:uid('r'), created_at:at(20), status:'pending', start_date:addDays(today(), 4), end_date:addDays(today(), 7), arr:'12:00', pick:'17:00', dog_spots:1, cat_spots:1,
-      name:'Priya Shah', phone:'555-0177', email:'priya@example.com', pets:[{name:'Mochi', species:'dog', breed:'Shiba Inu'},{name:'Pepper', species:'cat', breed:''}], share:true, notes:''}];
+      name:'Priya Shah', phone:'555-0177', email:'priya@example.com', pets:[{name:'Mochi', species:'dog', breed:'Shiba Inu', group:'A'},{name:'Koji', species:'dog', breed:'Shiba Inu', group:'B'},{name:'Pepper', species:'cat', breed:'', group:'C'}], dog_spots:2, share:false, notes:'Mochi and Koji don’t get along, separate kennels please.'}];
 }
 
 /* ============================== SYNC ============================== */
