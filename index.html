@@ -166,6 +166,10 @@ body.typing .sh>.ft{position:static;border-top:0}
 .tick{position:absolute;top:12px;width:24px;height:24px;margin-left:-12px;border-radius:50%;border:2px solid var(--card);color:#fff;font-size:12px;font-weight:700;padding:0;z-index:4;line-height:20px}
 .tick.late{box-shadow:0 0 0 2px var(--bad)}
 .tick.off{opacity:.4}
+/* drawn check mark: sits dead center at any size (a text ✓ rides low) */
+.tick,.chk{display:flex;align-items:center;justify-content:center}
+.ck{display:block;width:1em;height:1em;flex:none}
+.ck svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .grp{font-size:13px;font-weight:700;margin:14px 0 6px}
 .task-hint{font-size:13px;color:var(--pri);font-weight:600}
 .empty{padding:20px 4px;text-align:center;color:var(--mut)}
@@ -213,7 +217,7 @@ input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2
 .cell.wkstart{border-left:1.5px solid var(--field)}
 .rangebtn{border:0;background:none;display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:8px;min-height:36px}
 .rangebtn .chev{color:var(--mut);font-size:12px}
-.ldot{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;margin-right:5px;vertical-align:-2px;color:#fff;font-size:9px;font-weight:700;border:1.5px solid var(--card)}
+.ldot{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;margin-right:5px;vertical-align:-2px;color:#fff;font-size:7px;font-weight:700;border:1.5px solid var(--card)}
 /* a label too long for its space scrolls back and forth so the whole thing can be read (fitMarquees) */
 .mqw{overflow:hidden;min-width:0}
 .mq{display:inline-flex;align-items:center;white-space:nowrap;flex:none}
@@ -242,7 +246,7 @@ input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2
 <script>
 'use strict';
 
-const KEY = 'kennel-proto-v7';   // bumped so the new demo data loads in place of older saves
+const KEY = 'kennel-proto-v8';   // bumped so the new demo data loads in place of older saves
 const BUSINESS = 'Little Village Pet Lodge';
 const COLORS = ['#16A34A','#0EA5E9','#F59E0B','#A855F7','#EF4444','#EC4899','#14B8A6','#6366F1','#64748B'];
 const STATUS = {booked:'Booked', in:'In kennel', out:'Checked out'};
@@ -324,12 +328,11 @@ function seed(){
 
   const tucker = pet('Tucker', {breed:'Corgi', color:'Red & white', sex:'m', fixed:'yes', food:'Purina Pro Plan, 1 cup', perDay:'2', treats:'yes', treatFav:'peanut butter biscuits', personality:['Playful'], along:['Everyone'], likes:'Tennis balls'});
   const hazel = pet('Hazel', {breed:'Golden mix', color:'Gold', sex:'f', fixed:'yes', food:'Purina Pro Plan, 1½ cups', perDay:'2', personality:['Cuddlebug'], along:['Dogs','Humans']});
-  const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Love at first lick']},
-    [task('diet',[],'Grain-free only, owner’s food')]);
+  const otis = pet('Otis', {vaxOk:'no', breed:'Lab mix', color:'Black', sex:'m', fixed:'yes', chews:'yes', jumps:'yes', food:'Own grain-free kibble (in his bag), 2 cups', perDay:'2', dietNotes:'Grain-free only. No shared food.', treats:'no', personality:['Love at first lick']});
   const gus = pet('Gus', {breed:'Beagle', color:'Tricolor', sex:'m', fixed:'yes', bites:'yes', dislikes:'Being picked up', conditions:'Seasonal allergies', personality:['Shy at first']},
     [task('meds',['08:00'],'Apoquel 16 mg, 1 tablet with breakfast')]);
-  const willow = pet('Willow', {breed:'Shih Tzu', color:'White & tan', sex:'f', fixed:'yes', dob:addDays(today(),-365*12-40), conditions:'Arthritis, mild hearing loss', food:'Hill’s Senior, ½ cup', perDay:'2', personality:['Paw-fers privacy']},
-    [task('meds',['08:00','20:00'],'Rimadyl 25 mg, wrap in cheese'), task('diet',[],'Soften kibble with warm water')]);
+  const willow = pet('Willow', {breed:'Shih Tzu', color:'White & tan', sex:'f', fixed:'yes', dob:addDays(today(),-365*12-40), conditions:'Arthritis, mild hearing loss', food:'Hill’s Senior, ½ cup', perDay:'2', dietNotes:'Soften kibble with warm water.', personality:['Paw-fers privacy']},
+    [task('meds',['08:00','20:00'],'Rimadyl 25 mg, wrap in cheese'), task('meds',[],'Extra joint chew if she seems stiff')]);
   const roxy = pet('Nala', {breed:'Boxer', color:'Fawn', sex:'f', fixed:'yes', personality:['Playful'], along:['Humans']});
   const milo = cat('Mochi', {breed:'Domestic shorthair', color:'Orange tabby', sex:'m', fixed:'yes', conditions:'Diabetic', food:'Purina DM, measured', personality:['Paw-fers privacy']},
     [task('meds',['07:30','17:30'],'Insulin 2 units, right after meals')]);
@@ -389,8 +392,7 @@ function seed(){
     tags:[
       {id:'feed',name:'Feed',color:'#16A34A'},
       {id:'potty',name:'Potty',color:'#0EA5E9'},
-      {id:'meds',name:'Meds',color:'#F59E0B'},
-      {id:'diet',name:'Special diet',color:'#A855F7'}],
+      {id:'meds',name:'Meds',color:'#F59E0B'}],
     clients, stays, log:{}};
 
   // Fill in check-offs up to now so the demo looks like a normal day, leaving one thing overdue to show it off.
@@ -454,6 +456,7 @@ function h(tagName, attrs, ...kids){
   return e;
 }
 const AFTER = [];   // things to run once the new DOM is on the page (e.g. scroll a wheel into place)
+const check = () => h('span',{class:'ck', 'aria-hidden':'true', html:'<svg viewBox="0 0 12 12"><path d="M2.6 6.4l2.2 2.2L9.4 3.8"/></svg>'});
 const btn = (label, fn, cls='b', extra={}) => h('button', {class:cls, onclick:fn, ...extra}, label);
 const field = (label, el) => h('div', {class:'f'}, h('span',{class:'lbl'},label), el);
 const inp = (val, fn, a={}) => h('input', {value: val ?? '', onchange: e => fn(e.target.value), ...a});
@@ -874,7 +877,7 @@ function timeline(D){
             disabled: s.status==='booked',
             'aria-label':tg.name+' '+x.p.name+' '+t12(tm)+(done?' done':''), 'aria-pressed':!!done,
             style:`left:${px(tm) + (i - (g.length-1)/2)*26}px;background:${tg.color}`,
-            onclick:()=>toggleDone(it)}, done?'✓':''));
+            onclick:()=>toggleDone(it)}, done && check()));
         });
       }
       rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
@@ -907,6 +910,10 @@ function dayView(){
   const items = staysOn(D).filter(s=>s.status!=='booked').flatMap(s=>tasksFor(s,D)).filter(it=>it.s.status==='in' || S.log[it.key])
     .sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : kennelOrder(a.s,b.s));
   const lateN = items.filter(isLate).length;
+  // care with no set time: a standing note for the whole stay, shown above the to-do list
+  const notes = staysOn(D).filter(s=>s.status==='in').flatMap(s => s.pets.flatMap(pid => { const x = findPet(pid); if(!x) return [];
+    return x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => !t.times.length && liveTag(tag(t.tag))).map(t => ({s, p:x.p, c:x.c, t})); }))
+    .sort((a,b) => kennelOrder(a.s,b.s));
 
   const stayLine = (s, action) => h('div',{class:'card row'},
     h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
@@ -922,8 +929,9 @@ function dayView(){
         h('b',{}, tg.name), late && h('span',{class:'pill bad'},'overdue'),
         h('div',{}, it.p.name+' ('+it.c.name+') · '+kennel(it.s.kennel).name),
         it.t.note && h('div',{class:'mut'}, it.t.note),
+        isFeed(tg) && foodLine(it.p) && h('div',{class:'mut'}, foodLine(it.p)),
         done && h('div',{class:'mut'}, 'Done '+t12(hmOf(done.at)))),
-      h('button',{class:'chk'+(done?' on':''), 'aria-label':(done?'Done: ':'Mark done: ')+tg.name+' for '+it.p.name, 'aria-pressed':!!done, onclick:()=>toggleDone(it)}, done?'✓':''));
+      h('button',{class:'chk'+(done?' on':''), 'aria-label':(done?'Done: ':'Mark done: ')+tg.name+' for '+it.p.name, 'aria-pressed':!!done, onclick:()=>toggleDone(it)}, done && check()));
   };
   const todo = items.filter(it=>!S.log[it.key]), finished = items.filter(it=>S.log[it.key]);
   const timeGroups = list => byTime(list).map(g => [h('div',{class:'grp'}, t12(g.tm)), g.items.map(row)]);
@@ -932,12 +940,14 @@ function dayView(){
   const legend = h('div',{class:'lg', style:'padding-top:2px'},
     S.tags.filter(liveTag).map(t => h('span',{}, dot('background:'+t.color), t.name)),
     h('span',{}, dot('background:var(--mut);box-shadow:0 0 0 2px var(--bad)'), 'Overdue'),
-    h('span',{}, dot('background:var(--mut)','✓'), 'Done'),
+    h('span',{}, dot('background:var(--mut)', check()), 'Done'),
     h('span',{}, dot('background:var(--mut);opacity:.4'), 'Not checked in'));
   return [nav, timeline(D), legend,
     h('div',{class:'pad'},
       arrivals.length>0 && [h('div',{class:'sec'},'Arriving'), arrivals.map(s=>stayLine(s,'in'))],
       pickups.length>0 && [h('div',{class:'sec'},'Going home'), pickups.map(s=>stayLine(s,'out'))],
+      notes.length>0 && [h('div',{class:'sec'},'All stay'), notes.map(({s,p,c,t}) => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
+        h('b',{}, tag(t.tag).name), h('div',{}, p.name+' ('+c.name+') · '+kennel(s.kennel).name), t.note && h('div',{class:'mut'}, t.note)))],
       h('div',{class:'sec'}, h('span',{}, 'Care to do', lateN>0 && h('span',{class:'pill bad'}, lateN+' overdue'))),
       todo.length ? timeGroups(todo)
         : h('p',{class:'empty'}, items.length ? 'All care done for this day.' : arrivals.length ? 'Check pets in to see their care here.' : 'No care to do for pets in kennels this day.'),
@@ -1092,6 +1102,9 @@ function stayForm(u){
 
 /* ============================== STAY DETAIL ============================== */
 // the at-a-glance info staff need while the pet is here
+// what to put in the bowl, shown with each feeding
+const isFeed = tg => /feed|food|meal|breakfast|dinner/i.test(tg.name);
+const foodLine = p => [p.food, p.diet, p.dietNotes].filter(Boolean).join(' · ');
 function petFacts(p){
   const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
   const facts = [
