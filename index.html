@@ -881,17 +881,18 @@ function timeline(D){
         });
       }
       rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
-        h('div',{class:'tl-l', style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(s.kennel).name),
-          h('div',{class:'mut mqw'}, h('span',{class:'mq'}, x.p.name+' ('+x.c.name+')'))),
+        h('div',{class:'tl-l'}, h('div',{style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(s.kennel).name),
+          h('div',{class:'mut mqw'}, h('span',{class:'mq'}, x.p.name+' ('+x.c.name+')')))),
         track));
     }
   }
   const td = today(), X = D<td ? W : D>td ? 0 : px(nowHM());
   const head = h('div',{class:'tl-r', style:'height:24px'}, h('div',{class:'tl-l'}),
-    h('div',{class:'tl-t'}, hours.map(x => h('span',{style:`position:absolute;top:4px;left:${(x-6)*HOUR_PX}px;transform:translateX(${x===6?'0':x===22?'-100%':'-50%'});font-size:10px;color:var(--mut)`}, (x%12||12)+(x<12?'a':'p')))));
+    h('div',{class:'tl-t'}, hours.map(x => h('span',{style:`position:absolute;top:4px;left:${(x-6)*HOUR_PX}px;transform:translateX(${x===6?'0':x===22?'-100%':'-50%'});font-size:10px;color:var(--mut)`}, (x%12||12)+(x<12?' AM':' PM')))));
   const ov = h('div',{style:'position:absolute;left:96px;top:0;bottom:0;width:'+W+'px;pointer-events:none;z-index:3'},
     h('div',{style:`position:absolute;left:0;top:0;bottom:0;width:${X}px;background:var(--shade)`}),
-    D===td && h('div',{style:`position:absolute;left:${X}px;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bad)`}));
+    // the now line only while now is on the 6 AM to 10 PM scale
+    D===td && mins(nowHM())>=DAY_START && mins(nowHM())<=DAY_END && h('div',{style:`position:absolute;left:${X}px;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bad)`}));
   return h('div',{class:'tl', 'data-day':D},
     h('div',{class:'tl-in', style:`width:${W+96+12}px`}, head,
       rows.length ? rows : h('p',{class:'mut', style:'position:sticky;left:0;padding:10px 16px;margin:0'},'No pets here this day.'), ov));
