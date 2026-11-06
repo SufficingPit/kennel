@@ -1211,12 +1211,21 @@ function checkoutSheet(u){
 
 /* ============================== FAMILY (new and existing use the same sheet) ============================== */
 // text field bound to obj[key]; onSave runs after a change is committed
+// US numbers tidied to 555-123-4567 (or 123-4567); anything else (extensions, international) stays as typed
+function fmtPhone(v){
+  let d = v.replace(/\D/g,'');
+  if(/[a-z#]/i.test(v)) return v;   // letters or # mean an extension or a note: leave it alone
+  if(d.length===11 && d[0]==='1') d = d.slice(1);   // US country code, with or without +
+  if(d.length===10) return d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6);
+  if(d.length===7 && !v.trim().startsWith('+')) return d.slice(0,3)+'-'+d.slice(3);
+  return v;
+}
 function tf(o, k, label, onSave, opts={}){
   const el = h(opts.area?'textarea':'input', {type:opts.area?null:(opts.type||'text'), value:opts.area?null:(o[k]||''), placeholder:opts.ph||'', autocomplete:'off',
     inputmode:opts.inputmode||null,
     oninput: opts.live ? e=>{ o[k]=e.target.value; opts.live(); } : null,
     // a changed phone number redraws so its call button shows (held until typing stops, so the keyboard stays up)
-    onchange: e=>{ o[k]=e.target.value.trim(); onSave && onSave(); if(opts.type==='tel') quietRender(); }}, opts.area ? (o[k]||'') : null);
+    onchange: e=>{ o[k]=e.target.value.trim(); if(opts.type==='tel') o[k] = e.target.value = fmtPhone(o[k]); onSave && onSave(); if(opts.type==='tel') quietRender(); }}, opts.area ? (o[k]||'') : null);
   // a phone number gets a call button right inside its box
   const num = opts.type==='tel' && (o[k]||'').replace(/[^\d+]/g,'');
   return field(label, num && num.replace(/\D/g,'').length >= 7
