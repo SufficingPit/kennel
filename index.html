@@ -1592,7 +1592,9 @@ function syncNow(){
   })();
 }
 // redraw unless someone is typing (a redraw would close the keyboard)
-function quietRender(){ const a = document.activeElement; if(!(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) render(); }
+// (held back until they finish, then drawn: see the focusout listener)
+let renderLater = false;
+function quietRender(){ const a = document.activeElement; if(a && /^(INPUT|TEXTAREA)$/.test(a.tagName)) renderLater = true; else render(); }
 
 // Signing in on a phone: download first. Returns 'ok', or 'empty' when nothing is online yet.
 async function signIn(email, password){
@@ -1731,12 +1733,13 @@ function render(){
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
 S = migrate(S) || seed();
 render();
+syncNow();   // catch up with other phones as soon as the app opens
 
 // keep the "now" line and overdue marks fresh, but not while something is open or being typed
 setInterval(()=>{ const a = document.activeElement; if(!U.sh && !U.pk && !(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) render(); }, 60000);
 const isTextField = el => el && (el.tagName==='TEXTAREA' || (el.tagName==='INPUT' && !/^(checkbox|radio|file|date|button)$/.test(el.type)));
 document.addEventListener('focusin', e => { if(isTextField(e.target)) document.body.classList.add('typing'); });
-document.addEventListener('focusout', () => setTimeout(() => { if(!isTextField(document.activeElement)) document.body.classList.remove('typing'); }, 50));
+document.addEventListener('focusout', () => setTimeout(() => { if(!isTextField(document.activeElement)){ document.body.classList.remove('typing'); if(renderLater){ renderLater = false; render(); } } }, 50));
 // works offline once loaded (home-screen app)
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !U.sh && !U.pk) render(); });
