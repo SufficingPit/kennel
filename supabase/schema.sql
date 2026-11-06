@@ -17,6 +17,10 @@ create table if not exists public.records (
 );
 create index if not exists records_pull on public.records (user_id, synced_at);
 
+-- Only signed-in users can use the table at all; someone without a login gets nothing.
+revoke all on public.records from anon, authenticated;
+grant select, insert, update on public.records to authenticated;
+
 -- Each signed-in user only ever sees and writes their own rows.
 alter table public.records enable row level security;
 drop policy if exists "read own"   on public.records;
