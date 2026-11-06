@@ -153,6 +153,7 @@ create or replace function public.request_spot(p jsonb)
 returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare b jsonb := book_rules(); c jsonb; s date; e date; nd int; nc int; ds int; cs int; digits text; t uuid; pet jsonb;
+  dg text[] := '{}'; cg text[] := '{}'; g text; grouped boolean := false;
 begin
   -- one at a time, so two people can't both take the last spot
   perform pg_advisory_xact_lock(hashtext('request_spot'));
@@ -174,10 +175,16 @@ begin
   nd := 0; nc := 0;
   for pet in select * from jsonb_array_elements(p->'pets') loop
     if length(trim(coalesce(pet->>'name',''))) not between 1 and 40 or length(coalesce(pet->>'breed','')) > 60 then return jsonb_build_object('ok', false, 'reason', 'Check your pets’ names.'); end if;
-    if pet->>'species' = 'dog' then nd := nd + 1; elsif pet->>'species' = 'cat' then nc := nc + 1;
+    -- pets with the same kennel letter share one kennel (a dog and a cat never share)
+    g := nullif(left(pet->>'group', 2), ''); if g is not null then grouped := true; end if;
+    if pet->>'species' = 'dog' then nd := nd + 1; if g is not null and not g = any(dg) then dg := dg || g; end if;
+    elsif pet->>'species' = 'cat' then nc := nc + 1; if g is not null and not g = any(cg) then cg := cg || g; end if;
     else return jsonb_build_object('ok', false, 'reason', 'We board dogs and cats.'); end if;
   end loop;
-  if coalesce((p->>'share')::boolean, true) then ds := least(nd, 1); cs := least(nc, 1); else ds := nd; cs := nc; end if;
+  if grouped then
+    if dg && cg then return jsonb_build_object('ok', false, 'reason', 'A dog and a cat can’t share a kennel.'); end if;
+    ds := cardinality(dg); cs := cardinality(cg);
+  elsif coalesce((p->>'share')::boolean, true) then ds := least(nd, 1); cs := least(nc, 1); else ds := nd; cs := nc; end if;
   if ds > (c->>'dogs')::int or cs > (c->>'cats')::int then
     return jsonb_build_object('ok', false, 'reason', 'Not enough open spots for those dates.'); end if;
 
