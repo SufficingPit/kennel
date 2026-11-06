@@ -75,6 +75,7 @@ input[type=checkbox]{width:22px;height:22px;min-height:0;accent-color:var(--pri)
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .chip{min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--field);background:var(--card);font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
 .chip.on{background:var(--pri);border-color:var(--pri);color:var(--onp)}
+a.chip{text-decoration:none;color:var(--ink)}
 .chip.add{border-style:dashed;color:var(--pri);border-color:var(--pri)}
 .tchip{padding:0;gap:0;overflow:hidden}
 .tchip>button{border:0;background:none;min-height:36px;padding:0 6px 0 14px;font-weight:600}
@@ -89,6 +90,7 @@ input[type=checkbox]{width:22px;height:22px;min-height:0;accent-color:var(--pri)
 .tabs svg{width:22px;height:22px}
 .tabs .on{color:var(--pri)}
 .tabs .newtab{color:var(--pri)}
+.bdg{position:absolute;top:-6px;right:-12px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;box-sizing:border-box}
 .tabs .newtab .plus{width:34px;height:26px;border-radius:13px;background:var(--pri);color:var(--onp);font-size:22px;line-height:25px;font-weight:600;display:block}
 /* while typing, sheet buttons stop floating over the keyboard and just sit at the end */
 body.typing .sh>.ft{position:static;border-top:0}
@@ -1141,12 +1143,15 @@ function stayForm(u){
       : hit ? kennel(f.kennel).name+' is taken then. Pick another kennel.' : '';
     if(err){ u.err = err; render(); return; }
     const data = {kennel:f.kennel, start:f.start, arr:f.arr, end:f.end, pick:f.pick, pets:[...f.pets], notes:f.notes, belongings:f.belongings};
+    const sid = f.id || uid('s');
     if(f.id) Object.assign(S.stays.find(s=>s.id===f.id), data);
-    else S.stays.push({id:uid('s'), status:'booked', paid:false, extra:[], ...data});
+    else S.stays.push({id:sid, status:'booked', paid:false, extra:[], ...data});
+    if(f.req){ save(); reqStayBooked(f, sid); return; }
     U.wk = weekStart(f.start); U.tab = 'cal'; U.sh = f.id ? {t:'stay', id:f.id} : null; commit();
   };
-  const cancel = f.id ? () => open({t:'stay', id:f.id}) : close;
-  return sheet(f.id ? 'Edit stay' : 'New stay', [
+  const cancel = f.id ? () => open({t:'stay', id:f.id}) : f.req ? () => open({t:'req', id:f.req}) : close;
+  return sheet(f.id ? 'Edit stay' : f.req ? 'Book request' : 'New stay', [
+    f.req && (f.queue.length || f.made.length) ? h('p',{class:'mut', style:'margin-top:0'}, 'Kennel '+(f.made.length+1)+' of '+(f.made.length+1+f.queue.length)+' for this request.') : null,
     field('Family', f.id ? h('div',{class:'fld', style:'border-style:dashed'}, h('span',{class:'v'}, (c?c.name:'?')+' family'))
       : fieldBtn(c && c.name+' family', 'Choose a family', ()=>pickFamily(u), c && bestPhone(c))),
     c && field('Pets', h('div',{class:'chips', style:'margin:0'},
@@ -1632,6 +1637,181 @@ function closedSheet(u){
   ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', close, 'b2'), btn('Save', saveIt)]);
 }
 
+/* ============================== REQUESTS ============================== */
+// Booking requests from the public page. They live in their own table (not the shared
+// book): loaded with each sync, answered here. Approving books a stay (or one per kennel
+// needed); the request is then marked approved. Answers made offline wait in Y.reqq.
+const BIZ = 'Little Village Pet Lodge';
+let R = {list:[], loaded:false, err:''};
+const reqHeld = r => r.status==='pending' && Date.parse(r.created_at) + (S.book.hold||48)*3600e3 > Date.now();
+const reqWaiting = () => R.list.filter(r => r.status==='pending');
+const firstName = n => (n||'').trim().split(/\s+/)[0] || '';
+const lastName = n => { const w = (n||'').trim().split(/\s+/); return w.length > 1 ? w[w.length-1] : w[0] || ''; };
+const reqPetsText = r => { const nd = r.pets.filter(p=>p.species==='dog').length, nc = r.pets.length - nd;
+  return [nd && plural(nd,'dog'), nc && plural(nc,'cat')].filter(Boolean).join(', '); };
+const petList = names => names.length < 3 ? names.join(' and ') : names.slice(0,-1).join(', ')+' and '+names[names.length-1];
+// a time outside the posted hours costs the fee
+const offHours = (d, t) => { const w = S.book.hours[parseD(d).getDay()] || []; return !w.some(([a,b]) => a <= t && t <= b); };
+const ago = iso => { const m = Math.round((Date.now() - Date.parse(iso))/60000);
+  return m < 1 ? 'just now' : m < 60 ? plural(m,'minute')+' ago' : m < 60*24 ? plural(Math.round(m/60),'hour')+' ago' : plural(Math.round(m/1440),'day')+' ago'; };
+
+async function loadRequests(){
+  if(DEMO){ R = {list:S.reqs || [], loaded:true, err:''}; return; }
+  if(!synced() || Y.session.dead) return;
+  const since = new Date(Date.now() - 90*864e5).toISOString();
+  try {
+    await flushAnswers();
+    const list = await api('/rest/v1/requests?select=*&order=created_at.desc&limit=300&created_at=gt.'+encodeURIComponent(since));
+    // answers still waiting to go up show as already made
+    list.forEach(r => { if(Y.reqq && Y.reqq[r.id]) Object.assign(r, Y.reqq[r.id]); });
+    const before = JSON.stringify(R.list);
+    R = {list, loaded:true, err:''};
+    if(JSON.stringify(list) !== before) quietRender();
+  } catch(e){ R.err = 'Couldn’t load requests.'; }
+}
+async function flushAnswers(){
+  for(const id in Y.reqq || {}){
+    await api('/rest/v1/requests?id=eq.'+id, {method:'PATCH', headers:{Prefer:'return=minimal'}, body:JSON.stringify(Y.reqq[id])});
+    delete Y.reqq[id]; saveSync();
+  }
+}
+function answerReq(r, fields){
+  Object.assign(r, fields, {answered_at:new Date().toISOString()});
+  if(DEMO){ saveLocal(); return; }
+  const {status, reply, answered_at, stay_id} = r;
+  (Y.reqq ||= {})[r.id] = {status, reply, answered_at, stay_id, answered_by:Y.session.user};
+  saveSync(); flushAnswers().catch(() => {});
+}
+
+// best guess at the family: same phone, else same last name (a pet name match settles ties)
+function guessFamily(r){
+  const d = r.phone.replace(/\D/g,''), same = x => (x.length===7 || d.length===7) ? x.slice(-7)===d.slice(-7) : x.slice(-10)===d.slice(-10);
+  let c = d.length >= 7 && S.clients.find(c => allPhones(c).some(same));
+  if(c) return {c, how:'phone'};
+  const last = lastName(r.name).toLowerCase(), named = S.clients.filter(c => c.name.toLowerCase()===last);
+  c = named.find(c => r.pets.some(p => c.pets.some(q => q.name.toLowerCase()===p.name.trim().toLowerCase()))) || (named.length===1 && named[0]);
+  return c ? {c, how:'name'} : null;
+}
+
+function reqCard(r){
+  const n = daysBetween(r.start_date, r.end_date);
+  return h('button',{class:'card', onclick:()=>open({t:'req', id:r.id})},
+    h('div',{class:'row'}, h('b',{}, r.name), r.status!=='pending' ? h('span',{class:'pill'+(r.status==='approved' ? ' ok' : '')}, r.status==='approved' ? 'Approved' : r.status==='declined' ? 'Declined' : 'Cancelled')
+      : !reqHeld(r) && h('span',{class:'pill bad'},'Not held')),
+    h('div',{}, md(r.start_date)+' – '+md(r.end_date)+' · '+plural(n,'night')+' · '+reqPetsText(r)),
+    h('div',{class:'mut'}, r.status==='pending' ? 'Sent '+ago(r.created_at) : r.status==='cancelled' ? 'Cancelled by them' : 'Answered '+ago(r.answered_at)));
+}
+function reqsView(){
+  if(!R.loaded) loadRequests().then(quietRender);
+  const wait = reqWaiting().sort((a,b) => a.start_date < b.start_date ? -1 : 1);
+  const done = R.list.filter(r => r.status!=='pending' && Date.parse(r.answered_at || r.created_at) > Date.now() - 30*864e5);
+  return [h('div',{class:'top hdr'}, h('h1',{},'Requests')),
+    h('div',{class:'pad'},
+      !S.book.on && h('div',{class:'warn'},'Online requests are turned off. Turn them on in Settings, Online booking.'),
+      R.err && h('p',{class:'err'}, R.err),
+      wait.length ? [h('div',{class:'sec'},'Waiting for you'), wait.map(reqCard)]
+        : h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
+      done.length > 0 && [h('div',{class:'sec'},'Answered'), done.map(reqCard)])];
+}
+
+function reqSheet(u){
+  const r = R.list.find(x => x.id===u.id); if(!r) return null;
+  const n = daysBetween(r.start_date, r.end_date), fee = S.book.fee ? ', $'+S.book.fee+' fee' : '';
+  const g = u.fam===undefined ? guessFamily(r) : null;
+  if(u.fam===undefined) u.fam = g ? g.c.id : 'new', u.how = g ? g.how : '';
+  const fc = u.fam!=='new' && client(u.fam);
+  const pickFam = () => pickList({title:'Which family?', search:'Search family, pet or phone', focus:true,
+    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===u.fam})),
+    onPick: id => { u.fam = id; u.how = ''; },
+    action: {label: () => '+ New family “'+lastName(r.name)+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
+  const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
+  const num = r.phone.replace(/[^\d+]/g,'');
+  return sheet(r.name, [
+    r.status!=='pending' && h('div',{class:'warn'}, r.status==='approved' ? 'Approved '+ago(r.answered_at)+'.' : r.status==='declined' ? 'Declined '+ago(r.answered_at)+'.' : 'They cancelled this request.',
+      r.reply && h('div',{}, 'Your note: '+r.reply)),
+    r.status==='pending' && !reqHeld(r) && h('div',{class:'warn'},'Not answered in time, so its spots are open again. You can still approve it if there’s room.'),
+    h('div',{class:'card'},
+      line('Drop-off', wmd(r.start_date)+', '+t12(r.arr)+(offHours(r.start_date, r.arr) ? ' (other time'+fee+')' : '')),
+      line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : '')),
+      h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
+    h('div',{class:'sec'},'Pets'),
+    h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : 'Dog')+(p.breed ? ', '+p.breed : ''))),
+      r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, r.share ? 'Can share a kennel' : 'Want separate kennels')),
+    h('div',{class:'sec'},'Contact'),
+    h('div',{class:'card'},
+      h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
+        h('a',{class:'chip', href:'sms:'+num}, 'Text'), h('a',{class:'chip', href:'tel:'+num}, 'Call'))),
+      r.email && h('div',{style:'margin-top:6px'}, h('a',{href:'mailto:'+r.email}, r.email))),
+    r.notes && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, r.notes)],
+    r.status==='pending' && [h('div',{class:'sec'},'Family'),
+      fieldBtn(fc ? fc.name+' family' : 'New family: '+lastName(r.name), '', pickFam,
+        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : '')]
+  ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>approveReq(r, u.fam))] : btn('Done', close));
+}
+
+// Approve: make the family and pets if needed, then book one stay per kennel needed
+function approveReq(r, famId){
+  let c = famId!=='new' && client(famId);
+  if(!c){ c = fillClient({id:uid('c'), first:firstName(r.name), name:lastName(r.name), cell:fmtPhone(r.phone), email:r.email||''}); S.clients.push(c); }
+  const ids = r.pets.map(p => {
+    let q = c.pets.find(x => x.name.toLowerCase()===p.name.trim().toLowerCase());
+    if(!q){ q = newPet(p.name.trim(), p.species); q.breed = p.breed || ''; c.pets.push(q); }
+    return q.id;
+  });
+  save();
+  // which pets go together: one kennel per kind when they share, else one each
+  const kindOf = id => findPet(id).p.species==='cat' ? 'cat' : 'dog';
+  const groups = r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
+  openReqStay(r, c.id, groups, []);
+}
+function openReqStay(r, cid, groups, made){
+  const [pets, ...rest] = groups;
+  const f = {id:null, client:cid, pets, start:r.start_date, arr:r.arr, end:r.end_date, pick:r.pick, notes:r.notes||'', belongings:'', req:r.id, queue:rest, made};
+  const kind = findPet(pets[0]).p.species==='cat' ? 'cat' : 'dog';
+  const taken = new Set(made.map(id => S.stays.find(s=>s.id===id)?.kennel));
+  f.kennel = (S.kennels.find(k => bookKind(k)===kind && !taken.has(k.id) && !clash(f, k.id)) || S.kennels.find(k => !clash(f, k.id)) || S.kennels[0]).id;
+  open({t:'form', f});
+}
+// called by the stay form after it books a stay for a request
+function reqStayBooked(f, sid){
+  const r = R.list.find(x => x.id===f.req), made = [...f.made, sid];
+  if(f.queue.length) return openReqStay(r, f.client, f.queue, made);
+  answerReq(r, {status:'approved', stay_id:made.join(',')});
+  open({t:'reqans', id:r.id, act:'approved'});
+}
+
+// After approving, or to decline: an optional note, and a text ready to send from her phone
+function reqAnsSheet(u){
+  const r = R.list.find(x => x.id===u.id); if(!r) return null;
+  const names = petList(r.pets.map(p => p.name.trim()));
+  const ok = u.act==='approved';
+  const msg = n => 'Hi '+firstName(r.name)+', this is '+BIZ+'. '+(ok
+    ? names+(r.pets.length>1 ? ' are' : ' is')+' booked: drop-off '+wmd(r.start_date)+' at '+t12(r.arr)+', pickup '+wmd(r.end_date)+' at '+t12(r.pick)+'.'
+    : 'Sorry, we can’t take '+names+' '+md(r.start_date)+' – '+md(r.end_date)+'.')+(n.trim() ? ' '+n.trim() : '');
+  const sms = () => 'sms:'+r.phone.replace(/[^\d+]/g,'')+'?&body='+encodeURIComponent(msg(u.note||''));
+  const finish = () => { const note = (u.note||'').trim(); if(ok){ if(note) answerReq(r, {reply:note}); } else answerReq(r, {status:'declined', reply:note || null}); };
+  const back = ok ? () => { finish(); U.tab = 'reqs'; close(); } : () => open({t:'req', id:r.id});
+  return sheet(ok ? 'Booked' : 'Decline request', [
+    ok && h('p',{style:'margin-top:0'}, 'The stay'+(r.stay_id && r.stay_id.includes(',') ? 's are' : ' is')+' on the calendar. Let '+firstName(r.name)+' know.'),
+    field(ok ? 'Add a note (optional)' : 'Reason or note (optional)', h('textarea',{placeholder:ok ? 'e.g. Bring his food in a labeled bag.' : 'e.g. We’re full that week, but have room the week after.',
+      oninput:e=>{ u.note = e.target.value; const p = document.querySelector('.sh .smsprev'); if(p) p.textContent = msg(u.note); }}, u.note||'')),
+    h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:12px 0 6px'},'Text message'),
+    h('div',{class:'card smsprev', style:'white-space:pre-wrap'}, msg(u.note||''))
+  ], [ok ? btn('Done', back, 'b2') : btn('Decline, no text', ()=>{ finish(); U.tab = 'reqs'; close(); }, 'b2'),
+      h('a',{class:'b smsgo', style:'display:inline-flex;align-items:center;justify-content:center;text-decoration:none', href:sms(),
+        onclick:e=>{ e.currentTarget.href = sms(); finish(); setTimeout(() => { U.tab = 'reqs'; close(); }, 300); }}, ok ? 'Text them' : 'Decline and text')], back);
+}
+
+// demo: a couple of made-up requests (fake names and 555-01xx numbers)
+function demoRequests(){
+  const at = h => new Date(Date.now() - h*3600e3).toISOString();
+  return [
+    {id:uid('r'), created_at:at(3), status:'pending', start_date:addDays(today(), 9), end_date:addDays(today(), 14), arr:'08:30', pick:'16:30', dog_spots:1, cat_spots:0,
+      name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi'},{name:'Hazel', species:'dog', breed:'Golden mix'}], share:true, notes:'Same as last time, thank you!'},
+    {id:uid('r'), created_at:at(20), status:'pending', start_date:addDays(today(), 4), end_date:addDays(today(), 7), arr:'12:00', pick:'17:00', dog_spots:1, cat_spots:1,
+      name:'Priya Shah', phone:'555-0177', email:'priya@example.com', pets:[{name:'Mochi', species:'dog', breed:'Shiba Inu'},{name:'Pepper', species:'cat', breed:''}], share:true, notes:''}];
+}
+
 /* ============================== SYNC ============================== */
 // Local-first: this phone is the main copy and works offline. Once signed in, every
 // change goes to Supabase as one small record, and changes from other phones come back.
@@ -1852,7 +2032,7 @@ function syncNow(){
   if(!synced() || Y.session.dead) return Promise.resolve();
   return syncing ||= (async () => {
     SY.busy = true;
-    try { await push(); await pull(); SY.err = ''; SY.at = Date.now(); }
+    try { await push(); await pull(); SY.err = ''; SY.at = Date.now(); loadRequests(); }
     catch(e){ SY.err = navigator.onLine ? (e.message || 'Couldn’t reach the server.') : 'offline'; }
     finally { SY.busy = false; syncing = null; if(U.tab==='settings') quietRender(); }
   })();
@@ -1986,7 +2166,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
@@ -1994,6 +2174,7 @@ const ICONS = {
   today:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>',
   clients:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
   phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>',
+  reqs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2.5-7.5A2 2 0 0 1 7.4 4h9.2a2 2 0 0 1 1.9 1.5L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></svg>',
   settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>'};
 
 // labels wider than their space slide to the end and back, about 25px a second
@@ -2013,16 +2194,17 @@ function render(){
   AFTER.length = 0;
   if(needsSignIn()){ app.replaceChildren(signInScreen()); document.body.style.overflow = ''; return; }
 
-  const view = ({cal:calView, today:dayView, clients:clientsView, settings:settingsView})[U.tab]();
+  const view = ({cal:calView, today:dayView, clients:clientsView, reqs:reqsView, settings:settingsView})[U.tab]();
   // "New stay" lives in the middle of the tab bar so it never covers anything on the page
   const newDay = U.tab==='today' ? (U.day||today()) : U.range ? (U.range.start<=today() && today()<=U.range.end ? today() : U.range.start)
     : (U.wk<=today() && today()<=addDays(U.wk,6) ? today() : U.wk);
-  const tab = ([k,n]) => h('button',{class:U.tab===k?'on':'', 'aria-current':U.tab===k?'page':false, onclick:()=>{ if(k==='today' && U.tab!=='today') U.day=null; U.tab=k; U.sh=null; render(); scrollTo(0,0); }},
-      h('span',{html:ICONS[k], style:'display:flex'}), n);
+  const nReq = reqWaiting().length;
+  const tab = ([k,n]) => h('button',{class:U.tab===k?'on':'', 'aria-current':U.tab===k?'page':false, onclick:()=>{ if(k==='today' && U.tab!=='today') U.day=null; if(k==='reqs') loadRequests(); U.tab=k; U.sh=null; render(); scrollTo(0,0); }},
+      h('span',{html:ICONS[k], style:'display:flex;position:relative'}, k==='reqs' && nReq ? h('span',{class:'bdg', 'aria-label':nReq+' waiting'}, nReq) : null), n);
   const tabs = h('nav',{class:'tabs'},
     [['cal','Calendar'],['today','Today']].map(tab),
     h('button',{class:'newtab', 'aria-label':'New stay', onclick:()=>open({t:'form', f:newStayDraft(null, newDay)})}, h('span',{class:'plus'},'+'), 'New stay'),
-    [['clients','Clients'],['settings','Settings']].map(tab));
+    [['clients','Clients'], (S.book.on || R.list.length || U.tab==='reqs') && ['reqs','Requests'], ['settings','Settings']].filter(Boolean).map(tab));
   const fab = null;
   const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
   if(U.sh && !sh) U.sh = null;
@@ -2045,6 +2227,7 @@ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
 S = migrate(S) || seed();
 // the demo's stays are placed around the day it was built, so a new day gets fresh sample data (keeping the calendar filter)
 if(DEMO && S.seeded !== today()){ const kf = S.kf; S = seed(); if(kf) S.kf = kf; saveLocal(); }
+if(DEMO){ S.reqs ||= demoRequests(); loadRequests(); }
 render();
 syncNow();   // catch up with other phones as soon as the app opens
 
