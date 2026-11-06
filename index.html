@@ -285,6 +285,10 @@ const uid = p => (p||'i')+Date.now().toString(36)+(seq++).toString(36)+Math.rand
 /* ---------- data ---------- */
 function task(tag, times, note, pet){ return {id:uid('t'), tag, times:times||[], note:note||'', pet:pet||''}; }
 function copyPlan(pl){ return pl.map(t => ({...t, id:uid('t'), times:[...t.times]})); }
+// Care can be dated: `from` (first day) and `until` (last day). Ended care stays in the plan
+// so past days, check-offs and owner reports keep showing what was actually scheduled.
+const activeOn = (t, D) => (!t.from || D >= t.from) && (!t.until || D <= t.until);
+const current = t => !t.until;   // what's shown and edited: care that hasn't been ended
 // Fields follow the Little Village Pet Lodge intake form.
 const CLIENT_DEF = {first:'', name:'', email:'', cell:'', phone:'', work:'', city:'', state:'', zip:'',
   coName:'', coMain:'', coAlt:'', emName:'', emMain:'', emAlt:'', vet:'', vetPhone:'', pickupBy:'', signed:'', notes:''};
@@ -674,7 +678,7 @@ const join = (...a) => a.flat().filter(Boolean).join(' · ');
 function planEditor(plan, pets){
   const nextTime = t => { const last = t.times[t.times.length-1]; return last ? pad2(Math.min(21, +last.slice(0,2)+4))+':00' : '08:00'; };
   return h('div',{},
-    plan.map((t,i) => { const tg = tag(t.tag);
+    plan.filter(current).map(t => { const tg = tag(t.tag), i = plan.indexOf(t);
       return h('div',{class:'card st', style:'border-left-color:'+tg.color},
         h('div',{class:'row'},
           h('button',{class:'chip', onclick:()=>pickTag(t.tag, id=>{ t.tag=id; save(); })}, h('span',{class:'sw', style:'margin:0;border-radius:50%;background:'+tg.color}), tg.name, h('span',{class:'mut'},' ▾')),
@@ -692,7 +696,7 @@ function planEditor(plan, pets){
     btn('+ Add care', ()=>pickTag(null, id=>{ const t = task(id,[],''); plan.push(t); save();
       setTimeout(()=>pickTime(tag(id).name+': first time', '08:00', v=>{ t.times=[v]; save(); }), 0); }), 'chip add'));
 }
-const planReadOnly = plan => plan.length ? plan.map(t => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
+const planReadOnly = plan => plan.filter(current).length ? plan.filter(current).map(t => h('div',{class:'card st', style:'border-left-color:'+tag(t.tag).color},
   h('b',{}, tag(t.tag).name),
   h('div',{class:'mut'}, [t.times.map(t12).join(', '), t.note].filter(Boolean).join(' · ') || 'No set time'))) : h('p',{class:'mut'},'No care set up.');
 
@@ -702,7 +706,7 @@ function tasksFor(s, D){
   const out = [];
   for(const pid of s.pets){
     const x = findPet(pid); if(!x) continue;
-    const list = x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid));
+    const list = x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => activeOn(t, D));
     for(const t of list) for(const tm of t.times){
       if(D===s.start && tm < s.arr) continue;   // before drop-off
       if(D===s.end && tm > s.pick) continue;    // after pickup
@@ -724,7 +728,8 @@ const isLate = it => !S.log[it.key] && it.s.status==='in' && stamp(it.D,it.tm) <
 /* ============================== CALENDAR ============================== */
 // Care with no set time (e.g. special diet) is a dot on the label; timed care is a mark on the track under the bar.
 function calDots(s){
-  const ids = [...new Set(s.pets.flatMap(i=>findPet(i)?.p.plan||[]).concat(s.extra).filter(t=>!t.times.length).map(t=>t.tag))];
+  const ids = [...new Set(s.pets.flatMap(i=>findPet(i)?.p.plan||[]).concat(s.extra)
+    .filter(t=>!t.times.length && (!t.until || t.until>=s.start) && (!t.from || t.from<=s.end)).map(t=>t.tag))];
   return ids.map(tag).filter(liveTag).map(t=>h('span',{class:'dot', style:'background:'+t.color, title:t.name}));
 }
 function calView(){
@@ -919,7 +924,7 @@ function dayView(){
   const lateN = items.filter(isLate).length;
   // care with no set time: a standing note for the whole stay, shown above the to-do list
   const notes = staysOn(D).filter(s=>s.status==='in').flatMap(s => s.pets.flatMap(pid => { const x = findPet(pid); if(!x) return [];
-    return x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => !t.times.length && liveTag(tag(t.tag))).map(t => ({s, p:x.p, c:x.c, t})); }))
+    return x.p.plan.concat(s.extra.filter(t => !t.pet || t.pet===pid)).filter(t => !t.times.length && activeOn(t, D) && liveTag(tag(t.tag))).map(t => ({s, p:x.p, c:x.c, t})); }))
     .sort((a,b) => kennelOrder(a.s,b.s));
 
   const stayLine = (s, action) => h('div',{class:'card row'},
@@ -1006,8 +1011,9 @@ function settingsView(){
       btn('+ New type of care', ()=>open({t:'tag'}), 'chip add'),
 
       h('div',{class:'sec'},'Starting care for new pets'),
-      h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this. Changing it doesn’t change pets already added.'),
-      planEditor(S.tpl),
+      h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this.'),
+      planReadOnly(S.tpl),
+      btn('Edit starting care', ()=>open({t:'tpl', draft:copyPlan(S.tpl)}), 'b2 sm'),
 
       syncSection(),
 
@@ -1675,7 +1681,49 @@ function heldBanner(){
     h('div',{class:'row start', style:'margin-top:8px'}, btn('Bring them back', restoreHeld, 'b2 sm'), btn('Delete', releaseHeld, 'b sm bd'))) : null;
 }
 
-const SHEETS = {kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+/* ============================== STARTING CARE ============================== */
+// Same care as the starting care gave it (a hand-edited copy no longer counts)
+const sameCare = (a, b) => a.tag===b.tag && !a.pet && (a.note||'')===(b.note||'') && a.times.join()===b.times.join();
+// Pets whose current care still includes every item of the given starting care
+const onStartingCare = tpl => S.clients.flatMap(c => c.pets).filter(p => tpl.every(d => p.plan.some(t => current(t) && sameCare(t, d))));
+function tplSheet(u){
+  const changed = JSON.stringify(u.draft.map(({tag,times,note}) => [tag,times,note||''])) !== JSON.stringify(S.tpl.map(({tag,times,note}) => [tag,times,note||'']));
+  const saveTpl = () => {
+    if(!changed){ close(); return; }
+    const pets = S.tpl.length ? onStartingCare(S.tpl) : [];
+    pets.length ? open({t:'tplapply', draft:u.draft, n:pets.length}) : finishTpl(u.draft, false);
+  };
+  return sheet('Starting care', [
+    h('p',{class:'mut', style:'margin-top:0'},'Each new pet starts with a copy of this.'),
+    planEditor(u.draft)
+  ], [btn('Cancel', close, 'b2'), btn('Save', saveTpl)]);
+}
+function tplApplySheet(u){
+  const back = () => open({t:'tpl', draft:u.draft});
+  return sheet('Update existing pets?', [
+    h('p',{style:'margin-top:0'}, plural(u.n,'pet')+' still '+(u.n===1?'has':'have')+' the old starting care. Update '+(u.n===1?'it':'them')+' too?'),
+    h('p',{class:'mut'},'Changes start tomorrow. Past days, today and owner reports stay as they were. Pets whose care was changed by hand keep their own.')
+  ], [btn('Only new pets', ()=>finishTpl(u.draft, false), 'b2'), btn('Update '+plural(u.n,'pet'), ()=>finishTpl(u.draft, true))], back);
+}
+// Swap the starting care; optionally move matching pets over from tomorrow
+function finishTpl(draft, applyToPets){
+  const old = S.tpl, from = addDays(today(), 1), td = today();
+  if(applyToPets){
+    const gone = old.filter(d => !draft.some(n => sameCare(n, d)));    // removed or changed
+    const added = draft.filter(n => !old.some(d => sameCare(n, d)));   // new or changed
+    for(const p of onStartingCare(old)){
+      for(const d of gone){
+        const t = p.plan.find(t => current(t) && sameCare(t, d));
+        // care that hasn't started yet just goes; anything older ends today and keeps its history
+        if(t.from && t.from > td) p.plan.splice(p.plan.indexOf(t), 1); else t.until = td;
+      }
+      p.plan.push(...copyPlan(added).map(t => ({...t, from})));
+    }
+  }
+  S.tpl = draft; U.sh = null; commit();
+}
+
+const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor};
 
 /* ============================== RENDER ============================== */
