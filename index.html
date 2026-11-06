@@ -1796,6 +1796,7 @@ function bookingSection(){
   return [h('div',{class:'sec'},'Online booking'),
     h('p',{class:'mut', style:'margin-top:0'},'Rules for the request page on the website.'),
     field('Taking requests', seg([['on','On'],['off','Off']], b.on ? 'on' : 'off', v=>set('on', v==='on'))),
+    !b.on && tf(b,'offNote','What the request page says while requests are off',commit,{area:true, ph:'Online requests are paused right now. Please call or text us to book.'}),
     group('b-hours','Drop-off and pickup hours', hourLines.map(l => (l.from===l.to ? DAYS[l.from] : DAYS[l.from]+'–'+DAYS[l.to])+' '+l.t).join(' · '), [
       DAYS.map((d, i) => h('button',{class:'card docrow', onclick:()=>open({t:'hours', day:i})},
         h('b',{style:'width:44px;flex:none'}, d), h('span',{class:'grow'}, winText(b.hours[i])), h('span',{class:'mut'},'›'))),

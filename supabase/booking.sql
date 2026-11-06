@@ -137,7 +137,7 @@ end $$;
 -- What the public page needs to draw itself: hours, fee, rules
 create or replace function public.booking_info() returns jsonb
 language sql stable security definer set search_path = public as $$
-  select jsonb_build_object('on', coalesce((b->>'on')::boolean, false), 'hours', b->'hours', 'fee', b->'fee',
+  select jsonb_build_object('on', coalesce((b->>'on')::boolean, false), 'offNote', b->'offNote', 'hours', b->'hours', 'fee', b->'fee',
     'minN', b->'minN', 'lead', b->'lead', 'ahead', b->'ahead', 'today', book_today(b))
   from (select book_rules() b) x
 $$;
