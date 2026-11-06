@@ -41,6 +41,8 @@ button:disabled{opacity:.45;cursor:default}
 button.card{width:100%;border:0;text-align:left}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .docrow{display:flex;align-items:center;gap:10px;min-height:48px}
+.stepr{display:flex;align-items:center;gap:10px}
+.stv{min-width:120px;text-align:center;font-weight:600}
 .docimg{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#fff;margin:4px 0 12px}
 .row.start{justify-content:flex-start}
 .wrap{flex-wrap:wrap}
@@ -336,6 +338,7 @@ function migrate(d){
     delete d.vaccines; d.clients.forEach(c => c.pets.forEach(p => { delete p.vax; }));
     // personality is one pick, and "Everyone" stands alone
     d.clients.forEach(c => c.pets.forEach(p => { p.personality = p.personality.slice(0,1); if(p.along.includes('Everyone')) p.along = ['Everyone']; }));
+    d.book ??= defaultBook(d.kennels);
     return d; }
   return null;
 }
@@ -429,7 +432,7 @@ function seed(){
     stay('k3',  3,'09:00', 6,'16:00','booked',[coco]),
     stay('k8',  5,'09:00', 8,'16:00','booked',[murphy])];
 
-  const data = {v:4, seeded:today(), kennels, tpl,
+  const data = {v:4, seeded:today(), kennels, tpl, book:defaultBook(kennels),
     tags:[
       {id:'feed',name:'Feed',color:'#16A34A'},
       {id:'potty',name:'Potty',color:'#0EA5E9'},
@@ -1067,6 +1070,8 @@ function settingsView(){
       planReadOnly(S.tpl),
       btn('Edit starting care', ()=>open({t:'tpl', draft:copyPlan(S.tpl)}), 'b2 sm'),
 
+      bookingSection(),
+
       syncSection(),
 
       h('div',{class:'sec'},'Backup'),
@@ -1528,6 +1533,105 @@ function kennelRemoveSheet(){
   ], null);
 }
 
+/* ---------- online booking rules (Settings) ----------
+   Kept in the shared settings record, so the public request page and the database's
+   spot counter read the same rules the app shows. */
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAYS_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function defaultBook(kennels){
+  const wk = () => [['08:00','09:30'],['16:00','17:30']];
+  return {on:false, hours:[[['17:00','18:00']], wk(), wk(), wk(), wk(), wk(), wk()], fee:10, minN:1, lead:1, ahead:180, hold:48, closed:[], tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+    kk:Object.fromEntries(kennels.map(k => [k.id, /^c/i.test(k.name) ? 'cat' : 'dog']))};
+}
+const bookKind = k => S.book.kk[k.id] || (/^c/i.test(k.name) ? 'cat' : 'dog');
+// "8–9:30 AM, 4–5:30 PM"
+const span12 = (a, b) => { const x = t12(a).replace(':00 ',' '), y = t12(b).replace(':00 ',' ');
+  return x.slice(-2)===y.slice(-2) ? x.slice(0,-3)+'–'+y : x+' – '+y; };
+const winText = w => w.length ? w.map(([a,b]) => span12(a,b)).join(', ') : 'Closed';
+const addMin = (t, m) => { const n = Math.min(23*60+55, +t.slice(0,2)*60 + +t.slice(3) + m); return pad2(Math.floor(n/60))+':'+pad2(n%60); };
+const stepper = (v, min, max, step, fn, show) => h('div',{class:'stepr'},
+  btn('−', ()=>fn(Math.max(min, v-step)), 'chip', {'aria-label':'Less', disabled:v<=min}),
+  h('span',{class:'stv'}, show(v)),
+  btn('+', ()=>fn(Math.min(max, v+step)), 'chip', {'aria-label':'More', disabled:v>=max}));
+const nightsText = n => n+(n===1 ? ' night' : ' nights');
+const leadText = n => n===0 ? 'Same day' : n===1 ? '1 day ahead' : n+' days ahead';
+const aheadText = n => Math.round(n/30)+(n<=30 ? ' month' : ' months')+' out';
+const upcomingClosed = () => S.book.closed.filter(c => c.to >= today()).sort((a,b) => a.from < b.from ? -1 : 1);
+const closedText = c => c.from===c.to ? md(c.from) : md(c.from)+' – '+md(c.to);
+
+function bookingSection(){
+  const b = S.book, set = (k, v) => { b[k] = v; commit(); };
+  const nKind = kind => S.kennels.filter(k => bookKind(k)===kind).length;
+  const cl = upcomingClosed();
+  // the same hours on several days read as one line: "Mon–Sat 8–9:30 AM, 4–5:30 PM"
+  const hourLines = []; DAYS.forEach((d, i) => { const t = winText(b.hours[i]), last = hourLines[hourLines.length-1];
+    if(last && last.t===t && last.to===i-1) last.to = i; else hourLines.push({from:i, to:i, t}); });
+  return [h('div',{class:'sec'},'Online booking'),
+    h('p',{class:'mut', style:'margin-top:0'},'Rules for the request page on the website.'),
+    field('Taking requests', seg([['on','On'],['off','Off']], b.on ? 'on' : 'off', v=>set('on', v==='on'))),
+    group('b-hours','Drop-off and pickup hours', hourLines.map(l => (l.from===l.to ? DAYS[l.from] : DAYS[l.from]+'–'+DAYS[l.to])+' '+l.t).join(' · '), [
+      DAYS.map((d, i) => h('button',{class:'card docrow', onclick:()=>open({t:'hours', day:i})},
+        h('b',{style:'width:44px;flex:none'}, d), h('span',{class:'grow'}, winText(b.hours[i])), h('span',{class:'mut'},'›'))),
+      field('Fee for other times', h('div',{class:'row start'}, h('b',{},'$'),
+        inp(b.fee, v=>{ b.fee = Math.max(0, Math.round(+v || 0)); commit(); }, {inputmode:'numeric', style:'width:90px', 'aria-label':'Fee in dollars'})))]),
+    group('b-stay','Stay rules', join(nightsText(b.minN)+' minimum', 'book '+(b.lead===0 ? 'same day' : leadText(b.lead)), 'up to '+aheadText(b.ahead)), [
+      field('Shortest stay', stepper(b.minN, 1, 30, 1, v=>set('minN', v), nightsText)),
+      field('Book at least', stepper(b.lead, 0, 30, 1, v=>set('lead', v), leadText)),
+      field('Book up to', stepper(b.ahead, 30, 360, 30, v=>set('ahead', v), aheadText)),
+      field('A request holds its spot for', seg([[24,'1 day'],[48,'2 days'],[72,'3 days']], b.hold, v=>set('hold', v))),
+      h('p',{class:'mut', style:'margin:0'},'Until you answer, a request counts as taken. After this long without an answer, the spot opens again.')]),
+    group('b-closed','Closed dates', cl.length ? cl.slice(0,3).map(closedText).join(', ')+(cl.length>3 ? ' and more' : '') : 'None', [
+      h('p',{class:'mut', style:'margin-top:0'},'No drop-offs, pickups or stays can be requested over these dates.'),
+      cl.map(c => h('button',{class:'card docrow', onclick:()=>open({t:'closed', id:c.id})},
+        h('span',{class:'grow'}, h('b',{}, closedText(c)), c.note && h('div',{class:'mut'}, c.note)), h('span',{class:'mut'},'›'))),
+      btn('+ Add closed dates', ()=>open({t:'closed'}), 'chip add')]),
+    group('b-kennels','Kennels for online booking', nKind('dog')+' for dogs · '+nKind('cat')+' for cats', [
+      h('p',{class:'mut', style:'margin-top:0'},'Off keeps a kennel out of online requests. You can still book it here.'),
+      S.kennels.map(k => h('div',{class:'row', style:'min-height:52px'}, h('b',{}, k.name),
+        h('div',{style:'width:210px'}, seg([['dog','Dog'],['cat','Cat'],['off','Off']], bookKind(k), v=>{ b.kk[k.id] = v; commit(); }))))])
+  ];
+}
+
+function hoursSheet(u){
+  const b = S.book, f = u.f ||= {w:b.hours[u.day].map(x => [...x]), also:[]};
+  const saveIt = () => {
+    if(f.w.some(([a, z]) => a >= z)){ u.err = 'Each time has to end after it starts.'; render(); return; }
+    const w = [...f.w].sort((x, y) => x[0] < y[0] ? -1 : 1);
+    [u.day, ...f.also].forEach(d => b.hours[d] = w.map(x => [...x]));
+    U.sh = null; commit();
+  };
+  return sheet(DAYS_LONG[u.day], [
+    h('p',{class:'mut', style:'margin-top:0'},'When people can drop off and pick up.'),
+    f.w.length ? f.w.map((w, i) => h('div',{class:'row', style:'margin-bottom:8px'},
+        h('div',{class:'grow'}, fieldBtn(t12(w[0]), '', ()=>pickTime('From', w[0], v=>{ w[0] = v; u.err = ''; }))),
+        h('span',{class:'mut'},'to'),
+        h('div',{class:'grow'}, fieldBtn(t12(w[1]), '', ()=>pickTime('To', w[1], v=>{ w[1] = v; u.err = ''; }))),
+        btn('×', ()=>{ f.w.splice(i, 1); render(); }, 'ic', {'aria-label':'Remove this time'})))
+      : h('p',{}, 'Closed. No drop-offs or pickups.'),
+    btn('+ Add time', ()=>{ const last = f.w[f.w.length-1]; f.w.push(last ? [addMin(last[1], 60), addMin(last[1], 120)] : ['08:00','09:00']); render(); }, 'chip add'),
+    h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:18px 0 6px'},'Use the same hours on'),
+    h('div',{class:'row start wrap'}, DAYS.map((d, i) => i!==u.day && chip(d, f.also.includes(i), ()=>{
+      f.also = f.also.includes(i) ? f.also.filter(x => x!==i) : [...f.also, i]; render(); })))
+  ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', close, 'b2'), btn('Save', saveIt)]);
+}
+
+function closedSheet(u){
+  const b = S.book, orig = u.id && b.closed.find(c => c.id===u.id);
+  const f = u.f ||= orig ? {...orig} : {id:uid('x'), from:'', to:'', note:''};
+  const saveIt = () => {
+    if(!f.from || !f.to){ u.err = 'Pick both dates.'; render(); return; }
+    if(f.to < f.from) [f.from, f.to] = [f.to, f.from];
+    orig ? Object.assign(orig, f) : b.closed.push(f);
+    U.sh = null; commit();
+  };
+  return sheet(orig ? 'Closed dates' : 'Add closed dates', [
+    two(field('From', fieldBtn(f.from && md(f.from), 'Pick', ()=>pickDate('Closed from', f.from || today(), v=>{ f.from = v; if(!f.to || f.to < v) f.to = v; u.err = ''; }))),
+        field('Through', fieldBtn(f.to && md(f.to), 'Pick', ()=>pickDate('Closed through', f.to || f.from || today(), v=>{ f.to = v; u.err = ''; })))),
+    tf(f, 'note', 'Note (only you see it)', null, {ph:'e.g. Family trip'}),
+    orig && h('div',{style:'margin:16px 0 8px'}, btn('Remove these dates', ()=>{ b.closed = b.closed.filter(c => c!==orig); U.sh = null; commit(); }, 'lk bad'))
+  ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', close, 'b2'), btn('Save', saveIt)]);
+}
+
 /* ============================== SYNC ============================== */
 // Local-first: this phone is the main copy and works offline. Once signed in, every
 // change goes to Supabase as one small record, and changes from other phones come back.
@@ -1550,7 +1654,7 @@ function records(d){
   d.clients.forEach(c => r['client:'+c.id] = c);
   d.stays.forEach(s => r['stay:'+s.id] = s);
   for(const k in d.log) r['log:'+k] = d.log[k];
-  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam};
+  r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam, book:d.book};
   return r;
 }
 function applyRecord(k, data){
@@ -1561,7 +1665,7 @@ function applyRecord(k, data){
     if(kind==='client') fillClient(data);
     at>=0 ? arr.splice(at,1,data) : arr.push(data);
   } else if(kind==='log'){ if(data==null) delete S.log[id]; else S.log[id] = data; }
-  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; }
+  else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; }
 }
 
 // After every save: queue what changed since the last synced copy
@@ -1882,7 +1986,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
