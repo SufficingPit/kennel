@@ -204,13 +204,17 @@ input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2
 .rangebtn{border:0;background:none;display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:8px;min-height:36px}
 .rangebtn .chev{color:var(--mut);font-size:12px}
 .ldot{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;margin-right:5px;vertical-align:-2px;color:#fff;font-size:9px;font-weight:700;border:1.5px solid var(--card)}
-/* the family tag shrinks first so the pet name stays readable; a tag squeezed to almost nothing is hidden after layout */
+/* a label too long for its space scrolls back and forth so the whole thing can be read (fitMarquees) */
+.mqw{overflow:hidden;min-width:0}
+.mq{display:inline-flex;align-items:center;white-space:nowrap;flex:none}
+.mq.go{animation:mq var(--t) ease-in-out infinite}
+@keyframes mq{0%,15%{transform:translateX(0)}45%,60%{transform:translateX(var(--d))}90%,100%{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){.mq.go{animation:none}}
 .bar{display:flex;align-items:center}
-.bar .bl{display:flex;align-items:center;flex:1;min-width:0}
-.bar .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.bar .bl{display:flex;align-items:center;flex:1}
 .bar .arr{flex:none;margin-left:4px}
 .bar .dot{flex:none}
-.bar .fam{flex:0 6 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-left:5px;padding:0 5px;line-height:16px;border-radius:4px;background:rgba(0,0,0,.24);font-weight:500;font-size:10px;vertical-align:1px}
+.bar .fam{flex:none;margin-left:5px;padding:0 5px;line-height:16px;border-radius:4px;background:rgba(0,0,0,.24);font-weight:500;font-size:10px;vertical-align:1px}
 .colors .custom{width:40px;height:40px;border-radius:50%;border:2px dashed var(--field);background:var(--card);color:var(--mut);font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center}
 .colors .custom.on{border:3px solid var(--ink);box-shadow:inset 0 0 0 2px var(--bg)}
 .cwheel{display:block;margin:4px auto 12px;width:220px;height:220px;border-radius:50%;touch-action:none;cursor:crosshair}
@@ -694,7 +698,7 @@ function calView(){
         'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':''),
         style:pos+`background:${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
         onclick:()=>open({t:'stay', id:s.id})},
-        h('span',{class:'bl'}, h('span',{class:'nm'}, s.start<w?'‹ ':'', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s))), s.end>end && h('span',{class:'arr'},'›')));
+        h('span',{class:'bl mqw'}, h('span',{class:'mq'}, h('span',{class:'nm'}, s.start<w?'‹ ':'', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), s.end>end && h('span',{class:'arr'},'›')));
       const marks = [];
       for(const D of days){
         const all = tasksFor(s,D), seen = new Set();
@@ -727,7 +731,7 @@ function calView(){
     const sc = h('div',{class:'wkx', 'data-range':w+'_'+end}, grid);
     const slide = () => sc.querySelectorAll('.bar').forEach(bar => {
       const shift = Math.max(0, Math.min(sc.scrollLeft - bar.offsetLeft, bar.offsetWidth - 70));
-      bar.firstChild.style.marginLeft = shift + 'px';
+      if(bar.firstChild.style.marginLeft !== shift + 'px'){ bar.firstChild.style.marginLeft = shift + 'px'; fitMarquees(bar); }
     });
     sc.onscroll = () => { U.calX = sc.scrollLeft; slide(); };
     AFTER.push(slide);
@@ -817,7 +821,7 @@ function timeline(D){
       }
       rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
         h('div',{class:'tl-l', style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(s.kennel).name),
-          h('div',{class:'mut'}, x.p.name+' ('+x.c.name+')')),
+          h('div',{class:'mut mqw'}, h('span',{class:'mq'}, x.p.name+' ('+x.c.name+')'))),
         track));
     }
   }
@@ -1372,12 +1376,13 @@ const ICONS = {
   clients:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
   settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>'};
 
-// the pet name wins: drop the family tag when there isn't room for both
-function fitFamTags(){
-  document.querySelectorAll('.bar .fam').forEach(f => {
-    f.hidden = false;
-    const nm = f.parentNode.querySelector('.nm');
-    if(nm.scrollWidth > nm.clientWidth || (f.clientWidth < 34 && f.scrollWidth > f.clientWidth)) f.hidden = true;
+// labels wider than their space slide to the end and back, about 25px a second
+function fitMarquees(root = document){
+  root.querySelectorAll('.mq').forEach(m => {
+    // a sliver of a bar at the edge of the view is too small to read anything through
+    const room = m.parentNode.clientWidth, over = m.offsetWidth - room, go = over > 1 && room >= 24;
+    m.classList.toggle('go', go);
+    if(go){ m.style.setProperty('--d', -over + 'px'); m.style.setProperty('--t', Math.max(4, over/7.5) + 's'); }
   });
 }
 let lastSheet = null;
@@ -1413,7 +1418,7 @@ function render(){
     else if(tl.dataset.day===today()) tl.scrollLeft = Math.max(0, dayFrac(nowHM())*56*16 - tl.clientWidth/2 + 96);
   }
   AFTER.forEach(fn => fn());
-  fitFamTags();
+  fitMarquees();
 }
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
 S = migrate(S) || seed();
