@@ -144,6 +144,10 @@ body.typing .sh>.ft{position:static;border-top:0}
 .wheels .colon{position:relative;line-height:220px;font-size:22px;font-weight:700}
 .wheel{position:relative;width:76px;height:220px;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);overscroll-behavior:contain}
 .wheel::-webkit-scrollbar{display:none}
+.signin{max-width:360px;margin:0 auto;padding:max(12vh,48px) 24px 40px;text-align:center}
+.signin img{border-radius:16px;display:block;margin:0 auto 14px}
+.signin h1{font-size:22px;margin:0 0 22px}
+.signin form{text-align:left}
 .cal-hd{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 4px}
 .cal-hd b{font-size:17px}
 .cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-bottom:8px}
@@ -246,7 +250,9 @@ input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2
 <script>
 'use strict';
 
-const KEY = 'kennel-proto-v8';   // bumped so the new demo data loads in place of older saves
+// ?demo opens a sample-data copy that never signs in and keeps its own storage
+const DEMO = new URLSearchParams(location.search).has('demo');
+const KEY = DEMO ? 'kennel-demo-v1' : 'kennel-proto-v8';
 const BUSINESS = 'Little Village Pet Lodge';
 const COLORS = ['#16A34A','#0EA5E9','#F59E0B','#A855F7','#EF4444','#EC4899','#14B8A6','#6366F1','#64748B'];
 const STATUS = {booked:'Booked', in:'In kennel', out:'Checked out'};
@@ -1012,7 +1018,7 @@ function settingsView(){
           h('input',{type:'file', accept:'application/json,.json', style:'display:none', onchange:importData}))),
 
       // sample data is for trying the app out; once signed in, the real book is online
-      !Y.session && [h('div',{class:'sec'},'Demo'),
+      DEMO && [h('div',{class:'sec'},'Demo'),
         btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm')])];
 }
 function exportData(){
@@ -1450,7 +1456,7 @@ function kennelRemoveSheet(){
 // change goes to Supabase as one small record, and changes from other phones come back.
 // Safety: a phone that just signed in only downloads before it sends anything; the
 // server never erases (rows are only marked deleted); a burst of deletions waits for a yes.
-const SUPA = {url:'https://hmkhdmtededcxsjnlqxz.supabase.co', key:'sb_publishable_kNXTM6u_Jl95mmgBpJuzhw_bww2lCiB'};   // Project URL and anon (publishable) key. Never the service_role key.
+const SUPA = DEMO ? {url:'', key:''} : {url:'https://hmkhdmtededcxsjnlqxz.supabase.co', key:'sb_publishable_kNXTM6u_Jl95mmgBpJuzhw_bww2lCiB'};   // Project URL and anon (publishable) key. Never the service_role key.
 const SKEY = KEY + '-sync';
 const MASS_DELETE = 5;           // more stays than this deleted in one go (or 2+ families) are held for a yes
 const syncOn = () => !!(SUPA.url && SUPA.key);
@@ -1602,13 +1608,14 @@ async function signIn(email, password){
   Y.ready = true; saveLocal(); saveSync(); U.wk = weekStart(today()); U.day = null;
   return 'ok';
 }
-// First phone ever: start with an empty book, or send up what this phone has
-function startSync(upload){
-  if(!upload) S = blankData();
+// First sign-in ever (nothing online yet): start with an empty book
+function startSync(){
+  S = blankData();
   Y.base = {}; Y.pending = {}; Y.ready = true;
-  save(); render();
+  save();
 }
-function signOut(){ Y = freshSync(); saveSync(); render(); }
+// Signing out clears this phone; the online copy keeps everything
+function signOut(){ Y = freshSync(); saveSync(); S = blankData(); saveLocal(); U.tab = 'cal'; U.sh = null; render(); }
 function fromRows(rows){
   const prev = S; S = blankData();
   rows.forEach(r => { if(r && r.kind && !r.deleted) applyRecord(r.kind+':'+r.id, r.data); });
@@ -1622,36 +1629,41 @@ if(syncOn()){
   document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') syncNow(); });
 }
 
-function syncSection(){
-  if(!syncOn()) return null;
+// The real app (not ?demo) opens to this until someone signs in; after that the phone stays signed in
+const needsSignIn = () => syncOn() && !(Y.session && !Y.session.dead && Y.ready);
+function signInScreen(){
   const u = U.signin ||= {email:Y.session?.email || '', pw:'', err:'', busy:false};
-  const go = async () => {
+  const go = async e => {
+    e.preventDefault();
     if(!u.email.trim() || !u.pw){ u.err = 'Enter the email and password.'; render(); return; }
     u.busy = true; u.err = ''; render();
-    try { const r = await signIn(u.email, u.pw); u.pw = ''; u.empty = r==='empty'; if(r==='ok') syncNow(); }
-    catch(e){ u.err = e.message; }
+    try {
+      if(await signIn(u.email, u.pw) === 'empty') startSync();
+      u.pw = ''; U.tab = 'cal'; syncNow();
+    } catch(err){ u.err = err.message; }
     u.busy = false; render();
   };
-  const form = (note) => [note && h('p',{class:'mut', style:'margin-top:0'}, note),
-    field('Email', h('input',{type:'email', value:u.email, autocomplete:'username', oninput:e=>{ u.email = e.target.value; }})),
-    field('Password', h('input',{type:'password', value:u.pw, autocomplete:'current-password', oninput:e=>{ u.pw = e.target.value; }, onkeydown:e=>{ if(e.key==='Enter') go(); }})),
-    h('div',{class:'row start wrap'}, u.err && h('div',{class:'err'}, u.err), btn(u.busy ? 'Signing in…' : 'Sign in', go, 'b', {disabled:u.busy}))];
-  let body;
-  if(!Y.session) body = form('Signing in replaces what’s on this phone with the saved copy.');
-  else if(Y.session.dead) body = form('Signed out. Sign in again to keep saving online.');
-  else if(!Y.ready) body = [h('p',{class:'mut', style:'margin-top:0'}, 'Nothing is saved online yet.'),
-    h('div',{class:'row start wrap'}, btn('Start empty', ()=>confirmSheet('Start empty?', 'This clears the sample data on this phone so you can add real families.', 'Start empty', ()=>startSync(false)), 'b sm'),
-      btn('Upload this phone’s data', ()=>confirmSheet('Upload this phone’s data?', 'Everything on this phone becomes the saved copy, including any sample families.', 'Upload', ()=>startSync(true)), 'b2 sm'))];
-  else {
-    const waiting = Object.keys(Y.pending).length;
-    const status = SY.busy ? 'Saving…' : SY.err==='offline' ? 'Offline. Changes save online when you’re back.'
-      : SY.err ? 'Couldn’t save online. Will keep trying.' : waiting ? plural(waiting,'change')+' waiting'
-      : SY.at ? 'Saved online' : 'Signed in';
-    body = [h('div',{class:'card'}, h('b',{}, Y.session.email), h('div',{class:'mut'}, status)),
-      h('div',{class:'row start wrap', style:'margin-top:8px'}, btn('Sync now', ()=>{ syncNow(); render(); }, 'b2 sm'),
-        btn('Sign out', ()=>confirmSheet('Sign out?', waiting ? plural(waiting,'change')+' on this phone haven’t been saved online yet. Signing out keeps them here but stops saving.' : 'Data stays on this phone but stops saving online.', 'Sign out', signOut), 'lk'))];
-  }
-  return [h('div',{class:'sec'},'Online copy'), body];
+  // a real <form> so the phone offers to save the password
+  return h('div',{class:'signin'},
+    h('img',{src:'apple-touch-icon.png', alt:'', width:72, height:72}),
+    h('h1',{}, BUSINESS),
+    Y.session?.dead && h('p',{class:'mut'}, 'Please sign in again.'),
+    h('form',{onsubmit:go},
+      field('Email', h('input',{type:'email', name:'email', value:u.email, autocomplete:'username', inputmode:'email', oninput:e=>{ u.email = e.target.value; u.err = ''; }})),
+      field('Password', h('input',{type:'password', name:'password', value:u.pw, autocomplete:'current-password', oninput:e=>{ u.pw = e.target.value; u.err = ''; }})),
+      u.err && h('div',{class:'err', style:'margin-bottom:10px'}, u.err),
+      h('button',{class:'b', type:'submit', disabled:u.busy, style:'width:100%'}, u.busy ? 'Signing in…' : 'Sign in')));
+}
+function syncSection(){
+  if(!syncOn() || !Y.session) return null;
+  const waiting = Object.keys(Y.pending).length;
+  const status = SY.busy ? 'Saving…' : SY.err==='offline' ? 'Offline. Changes save online when you’re back.'
+    : SY.err ? 'Couldn’t save online. Will keep trying.' : waiting ? plural(waiting,'change')+' waiting'
+    : SY.at ? 'Saved online' : 'Signed in';
+  return [h('div',{class:'sec'},'Online copy'),
+    h('div',{class:'card'}, h('b',{}, Y.session.email), h('div',{class:'mut'}, status)),
+    h('div',{class:'row start wrap', style:'margin-top:8px'}, btn('Sync now', ()=>{ syncNow(); render(); }, 'b2 sm'),
+      btn('Sign out', ()=>confirmSheet('Sign out?', waiting ? plural(waiting,'change')+' on this phone haven’t been saved online yet and will be lost.' : 'Everything stays saved online. This phone will ask to sign in again.', 'Sign out', signOut), 'lk'))];
 }
 // Shown on every tab while a big deletion is waiting for a yes
 function heldBanner(){
@@ -1686,6 +1698,7 @@ function render(){
   const oldSh = app.querySelector('.ov:not(.pk) .sh'), shTop = oldSh ? oldSh.scrollTop : 0;
   const oldTl = app.querySelector('.tl'), tlLeft = oldTl ? oldTl.scrollLeft : null, tlDay = oldTl?.dataset.day;
   AFTER.length = 0;
+  if(needsSignIn()){ app.replaceChildren(signInScreen()); document.body.style.overflow = ''; return; }
 
   const view = ({cal:calView, today:dayView, clients:clientsView, settings:settingsView})[U.tab]();
   // "New stay" lives in the middle of the tab bar so it never covers anything on the page
