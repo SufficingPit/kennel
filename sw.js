@@ -1,6 +1,6 @@
 // Keeps a copy of the app on the phone so it opens without signal.
 // Always tries the network first, so updates show up when online.
-const CACHE = 'kennel-v9';
+const CACHE = 'kennel-v10';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });

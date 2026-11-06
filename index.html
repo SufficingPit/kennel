@@ -1103,6 +1103,8 @@ function settingsView(){
 
       bookingSection(),
 
+      websiteSection(),
+
       syncSection(),
 
       h('div',{class:'sec'},'Backup'),
@@ -1576,6 +1578,127 @@ function setTheme(t){
   render();
 }
 
+/* ---------- website editor (Settings > Website) ----------
+   The lodge website draws its text, prices and photos from S.site (record site:main),
+   read publicly through site_content(). S.site stays empty until someone edits, so a
+   phone that never opened the editor can't overwrite edits made on another one.
+   Hours come from the booking rules, not from here. */
+const SITE_URL = 'https://sufficingpit.github.io/lvpetlodge/';
+function defaultSite(){
+  const ph = (id, cap) => ({id, src:'img/'+id+'.jpg', sm:'img/'+id+'-sm.jpg', cap});
+  return {v:1, notice:'',
+    headline:'Lodging for your pets while you’re away from home',
+    intro:'A safe, friendly place in the country north of Funk, Nebraska, for dogs, cats, and most any small pet with fur, feathers or scales.',
+    hero:'g8', heroTag:'Hi, I’m Clio!',
+    boardIntro:'Enjoy your vacation or time away from home without worrying about your fur baby.',
+    cards:[
+      {title:'Dogs', text:'Each dog kennel is 4×8 feet. Dogs are let out several times a day to do their business and play. There’s an indoor play area for when it’s too cold or wet outside.\n\nThe indoor play area is shared, so your dog needs to be dog friendly to use it while others are there.', vax:'Vaccines required: Rabies, Canine Distemper, Bordetella'},
+      {title:'Cats and ferrets', text:'Cats get their own cat condo in the lobby. There are two condos, and each fits up to 2 large cats or 3 small cats who get along. A kennel in the dog area is available if absolutely needed.\n\nFerrets are housed the same as cats if no cage is brought.', vax:'Vaccines required for cats: Rabies, FVRCP, Feline Leukemia'},
+      {title:'Other pets', text:'Birds, reptiles, rabbits and other small pets are welcome. Please bring their cage or enclosure (or a temporary one). They stay in the lobby or kennel area depending on space.', vax:'Vaccines: up to date where applicable'}],
+    vaxNote:'All pets must be up to date on vaccines for their species. It keeps everyone’s pets healthy, including yours.',
+    prices:[{label:'Dogs', sub:'per dog', price:'$25'}, {label:'Cats', sub:'per cat', price:'$15'}, {label:'Other pets', sub:'per pet', price:'$10'}],
+    shareNote:'Two pets sharing a kennel, condo or enclosure: $2 off each. For example, two dogs in one kennel are $23 each, $46 a night.',
+    extras:[{label:'Pickup during evening hours', price:'+$5'}, {label:'Drop-off or pickup outside hours', price:'+$10'}, {label:'Medications given', price:'+$2'}],
+    payNote:'We take cards through Square. Card payments have a 2.6% fee to cover Square’s charge.',
+    about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska, just north of Funk. We take most any small pet, not just dogs and cats, and give your fur, feather or scaly babies a safe place to stay while you’re away.\n\nOwner Ashleigh Jauken runs the lodge mostly by herself, usually with one or both of her young sons, Kaleb and Kolby, along. She has loved animals all her life, studied to be a vet tech at the Nebraska College of Technical Agriculture, and graduated with a degree in Applied Animal Science.\n\nThe name comes from the place. Funk is officially the Village of Funk, and with lots of different animals staying together, it’s a little village of its own. Being out in the country, “lodge” fit better than “boarding.”',
+    groomer:'Groomers: we’re looking for a groomer to rent space at the lodge. Call, text or email if you’re interested.',
+    phone:'(308) 233-2652', email:'littlevillagepetlodge@outlook.com',
+    facebook:'https://www.facebook.com/Little-Village-Pet-Lodge-109671294113263/',
+    address:'11841 740 Road, Funk, NE 68940',
+    directions:'The first mile of 740 Rd west of T Rd is a minimum maintenance road. When it’s wet, or has been, please use 741 Rd or 739 Rd instead.\n\nWe’re the big metal building.',
+    photos:[ph('g1','Facility building and parking'), ph('g2','Entrance'), ph('g3','Lobby'), ph('g4','Cat condos in the lobby'), ph('g5','A cat condo up close'),
+      ph('g6','Kennel room'), ph('g7','Occupied kennel'), ph('g8','I’m Clio'), ph('g9','Being let out'), ph('g10','In the yard with a friend')]};
+}
+// photos in the repo are relative to the website; uploaded ones are full addresses
+const sitePhotoURL = src => /^(https?:|data:)/.test(src) ? src : SITE_URL + src;
+
+function websiteSection(){
+  return [h('div',{class:'sec'},'Website'),
+    h('p',{class:'mut', style:'margin-top:0'},'Change the text, prices and photos on the lodge website. Drop-off hours come from Online booking.'),
+    h('div',{class:'row start wrap'}, btn('Edit website', ()=>open({t:'site'}), 'b2 sm'),
+      h('a',{class:'lk', href:SITE_URL, target:'_blank', rel:'noopener', style:'display:inline-flex;align-items:center;text-decoration:none'}, 'View website'))];
+}
+
+function siteSheet(u){
+  const W = S.site || (u.draft ||= defaultSite());
+  const sv = () => { S.site = W; save(); };
+  const redraw = () => { sv(); render(); };
+  const g = (id, title, summary, body) => group('w-'+id, title, summary, body);
+  const mini = (o, k, ph, a={}) => h('input',{value:o[k]||'', placeholder:ph, autocomplete:'off', 'aria-label':ph, style:a.style||'', onchange:e=>{ o[k] = e.target.value.trim(); sv(); }});
+  const up = U.upl && U.upl.pet==='site' ? U.upl : null;
+  const move = (i, d) => { const a = W.photos, j = i + d; if(j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; redraw(); };
+  return sheet('Website', [
+    h('p',{class:'mut', style:'margin-top:0'}, DEMO ? 'This is the demo, so changes here don’t reach the real website.' : 'Changes show on the website about a minute after you make them.',
+      ' ', h('a',{href:SITE_URL, target:'_blank', rel:'noopener'}, 'View website')),
+    g('notice','Notice at the top', W.notice || 'None', [
+      h('p',{class:'mut', style:'margin-top:0'},'A short message shown at the top of the website, like holiday closures. Leave it empty for none.'),
+      tf(W,'notice','Notice',sv,{area:true, ph:'e.g. Closed Dec 24–26. Merry Christmas!'})]),
+    g('top','Top of the page', W.headline, [
+      tf(W,'headline','Headline',sv),
+      tf(W,'intro','Under the headline',sv,{area:true}),
+      field('Big photo', h('div',{class:'chips', style:'margin:0'}, W.photos.map(p => chip(p.cap || 'Photo', W.hero===p.id, ()=>{ W.hero = p.id; redraw(); })))),
+      tf(W,'heroTag','Label on the photo (optional)',sv)]),
+    g('board','Boarding', W.cards.map(c => c.title).join(', '), [
+      tf(W,'boardIntro','Intro',sv,{area:true}),
+      W.cards.map(c => h('div',{class:'card'}, tf(c,'title','Title',sv), tf(c,'text','Text (a blank line starts a new paragraph)',sv,{area:true}), tf(c,'vax','Vaccines line',sv))),
+      tf(W,'vaxNote','Vaccine note',sv,{area:true})]),
+    g('prices','Prices', W.prices.map(p => p.label+' '+p.price).join(' · '), [
+      h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:0 0 6px'},'Per night'),
+      W.prices.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch'}, mini(p,'label','What'), mini(p,'sub','per…',{style:'max-width:78px;padding:0 8px'}), mini(p,'price','$',{style:'max-width:62px;padding:0 8px'}),
+        btn('×', ()=>{ W.prices.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+p.label, style:'min-width:32px'}))),
+      btn('+ Add price', ()=>{ W.prices.push({label:'', sub:'', price:''}); redraw(); }, 'chip add'),
+      tf(W,'shareNote','Note under prices',sv,{area:true}),
+      h('div',{class:'lbl mut', style:'font-weight:600;font-size:12px;margin:14px 0 6px'},'Extras'),
+      W.extras.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch'}, mini(p,'label','What'), mini(p,'price','+$',{style:'max-width:62px;padding:0 8px'}),
+        btn('×', ()=>{ W.extras.splice(i,1); redraw(); }, 'ic', {'aria-label':'Remove '+p.label, style:'min-width:32px'}))),
+      btn('+ Add extra', ()=>{ W.extras.push({label:'', price:''}); redraw(); }, 'chip add'),
+      tf(W,'payNote','Payment note',sv,{area:true})]),
+    g('photos','Photos', plural(W.photos.length,'photo'), [
+      h('p',{class:'mut', style:'margin-top:0'},'Shown in the gallery, in this order. Tap a caption to change it.'),
+      W.photos.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px'},
+        h('img',{src:sitePhotoURL(p.sm || p.src), alt:'', style:'width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none'}),
+        h('div',{class:'grow'}, mini(p,'cap','Caption')),
+        btn('↑', ()=>move(i,-1), 'ic', {'aria-label':'Move up', disabled:i===0, style:'min-width:36px;font-size:18px'}),
+        btn('↓', ()=>move(i,1), 'ic', {'aria-label':'Move down', disabled:i===W.photos.length-1, style:'min-width:36px;font-size:18px'}),
+        btn('×', ()=>confirmSheet('Remove this photo?', 'Takes it off the website.', 'Remove', ()=>{ W.photos.splice(i,1); if(W.hero===p.id) W.hero = W.photos[0]?.id || ''; S.site = W; U.sh = u; }, u), 'ic', {'aria-label':'Remove photo'}))),
+      up && !up.err ? h('p',{class:'mut'},'Uploading…')
+        : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add photos',
+            h('input',{type:'file', accept:'image/*', multiple:true, style:'display:none', onchange:e=>addSitePhotos(W, [...e.target.files])})),
+      up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err)]),
+    g('about','About', W.about.slice(0,60)+'…', [
+      tf(W,'about','About us (a blank line starts a new paragraph)',sv,{area:true}),
+      tf(W,'groomer','Extra note (optional)',sv,{area:true})]),
+    g('contact','Contact and directions', W.phone+' · '+W.email, [
+      two(tf(W,'phone','Phone',sv,{type:'tel'}), tf(W,'email','Email',sv)),
+      tf(W,'facebook','Facebook page link',sv),
+      tf(W,'address','Address',sv),
+      tf(W,'directions','Directions (a blank line starts a new paragraph)',sv,{area:true})]),
+    S.site && h('div',{style:'margin:20px 0 8px'}, btn('Start over from the original text', ()=>confirmSheet('Start over?', 'Puts back the original website text, prices and photos. Your changes are replaced.', 'Start over', ()=>{ S.site = defaultSite(); U.sh = {t:'site'}; }, u), 'lk bad'))
+  ], btn('Done', close));
+}
+
+async function addSitePhotos(W, files){
+  if(!files.length) return;
+  U.upl = {pet:'site'}; render();
+  let err = '';
+  for(const f of files){
+    if(!/^image\//.test(f.type)){ err = 'Only photos can be added.'; continue; }
+    try {
+      const big = await shrinkImage(f, 1600), small = await shrinkImage(f, 640);
+      const id = uid('w'), p = {id, cap:''};
+      if(DEMO){ p.src = await asDataURL(small); p.sm = p.src; }
+      else {
+        for(const [name, blob] of [[id+'.jpg', big], [id+'-sm.jpg', small]])
+          await storage('object/site/'+name, {method:'POST', headers:{'Content-Type':'image/jpeg', 'x-upsert':'false'}, body:blob});
+        p.src = SUPA.url+'/storage/v1/object/public/site/'+id+'.jpg'; p.sm = SUPA.url+'/storage/v1/object/public/site/'+id+'-sm.jpg';
+      }
+      const live = S.site || W; live.photos.push(p); S.site = live; save();
+    } catch(e){ err = 'Couldn’t upload. Check the signal and try again.'; }
+  }
+  U.upl = err ? {pet:'site', err} : null;
+  quietRender();
+}
+
 /* ---------- online booking rules (Settings) ----------
    Kept in the shared settings record, so the public request page and the database's
    spot counter read the same rules the app shows. */
@@ -1878,6 +2001,7 @@ function records(d){
   d.stays.forEach(s => r['stay:'+s.id] = s);
   for(const k in d.log) r['log:'+k] = d.log[k];
   r['settings:main'] = {kennels:d.kennels, tags:d.tags, tpl:d.tpl, showFam:d.showFam, book:d.book};
+  if(d.site) r['site:main'] = d.site;   // only once someone has edited the website
   return r;
 }
 function applyRecord(k, data){
@@ -1888,6 +2012,7 @@ function applyRecord(k, data){
     if(kind==='client') fillClient(data);
     at>=0 ? arr.splice(at,1,data) : arr.push(data);
   } else if(kind==='log'){ if(data==null) delete S.log[id]; else S.log[id] = data; }
+  else if(kind==='site'){ if(data) S.site = data; else delete S.site; }
   else if(kind==='settings' && data){ S.kennels = data.kennels; S.tags = data.tags; S.tpl = data.tpl; if(data.showFam==null) delete S.showFam; else S.showFam = data.showFam; if(data.book) S.book = data.book; }
 }
 
@@ -1954,11 +2079,11 @@ async function storage(path, opts={}, retried){
   return r.json();
 }
 // photos are saved as a JPEG no bigger than 2000px: a shot record stays readable and small
-async function shrinkImage(file){
+async function shrinkImage(file, max = 2000){
   let im;
   try { im = await createImageBitmap(file); }
   catch(e){ im = await new Promise((ok, no) => { const x = new Image(); x.onload = () => ok(x); x.onerror = no; x.src = URL.createObjectURL(file); }); }
-  const k = Math.min(1, 2000/Math.max(im.width, im.height));
+  const k = Math.min(1, max/Math.max(im.width, im.height));
   const cv = h('canvas',{width:Math.round(im.width*k), height:Math.round(im.height*k)}), ctx = cv.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(im, 0, 0, cv.width, cv.height);
   return new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error('bad image')), 'image/jpeg', .82));
@@ -2209,7 +2334,7 @@ function finishTpl(draft, applyToPets){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
