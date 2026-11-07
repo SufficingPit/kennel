@@ -2333,6 +2333,7 @@ async function printForm(g){
   const el = document.getElementById('print');
   el.innerHTML = guestPaper({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)}, SITE_URL);
   await document.fonts.ready.catch(() => {});
+  if(window.guestPaperFit) guestPaperFit(el);
   await Promise.all([...el.querySelectorAll('img')].map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
   const old = document.title; document.title = ('Guest form '+gfName(g)).replace(/[^\w &-]/g,'');
   window.print();
