@@ -234,6 +234,10 @@ body.typing .sh>.ft{position:static;border-top:0}
 .paper h3{margin:18px 0 6px;font-size:15px;border-bottom:1px solid #DDD;padding-bottom:4px}
 .paper .sub{color:#5B6472}
 .paper .day{margin:10px 0 2px;font-weight:700}
+.paper .billt{width:100%;border-collapse:collapse}
+.paper .billt td{padding:3px 0;vertical-align:top}
+.paper .billt td:last-child{text-align:right;white-space:nowrap;padding-left:12px}
+.paper .billt .tot td{border-top:1px solid #DDD;font-weight:700;padding-top:6px}
 .paper .pl{margin-left:10px}
 .paper .box{display:inline-block;width:12px;height:12px;border:1.5px solid #555;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .paper .msg{white-space:pre-wrap;border:1px solid #9CA3AF;border-radius:8px;padding:10px 12px;margin-top:6px}
@@ -1646,6 +1650,10 @@ function reportPaper(s){
     h('h3',{},'Care during the stay'),
     dayBlocks.length ? dayBlocks : h('div',{class:'sub'},'No care was logged for this stay.'),
     items.length>0 && [h('h3',{},'Going home'), items.map(x => h('div',{}, h('span',{class:'box'}), x))],
+    s.reportBill!==false && (() => { const b = billFor(s), shown = b.lines.filter(l => !l.waived);
+      return [h('h3',{},'Bill'),
+        h('table',{class:'billt'}, shown.map(l => h('tr',{}, h('td',{}, l.label, l.sub && h('span',{class:'sub'}, ' · '+l.sub)), h('td',{}, money(l.amt)))),
+          h('tr',{class:'tot'}, h('td',{}, 'Total'+(s.paid ? ' (paid, thank you!)' : '')), h('td',{}, money(b.total))))]; })(),
     h('p',{class:'sub', style:'margin-top:18px'}, 'Thank you for staying with us!'));
 }
 function printReport(s){
@@ -1660,7 +1668,8 @@ function reportSheet(u){
   const back = () => open({t:'stay', id:s.id});
   return sheet('Owner report', [
     field('Note for the owner', area(s.report, v=>{ s.report=v; commit(); }, {placeholder:'How the stay went, anything to pass on'})),
-    h('p',{class:'mut', style:'margin-top:-4px'},'Preview below. Care comes from check-offs, and the going-home list from items brought along.'),
+    h('div',{class:'row start', style:'margin:-4px 0 10px'}, chip((s.reportBill!==false ? '✓ ' : '')+'Include the bill', s.reportBill!==false, ()=>{ s.reportBill = s.reportBill===false ? true : false; if(s.reportBill) delete s.reportBill; commit(); })),
+    h('p',{class:'mut', style:'margin-top:-4px'},'Preview below. Care comes from check-offs, the going-home list from items brought along, and the bill from the stay.'),
     reportPaper(s),
     h('div',{style:'height:8px'})
   ], [btn('Back', back, 'b2'), btn('Print / save PDF', ()=>printReport(s))], back);
