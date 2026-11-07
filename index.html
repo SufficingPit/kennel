@@ -2632,6 +2632,9 @@ function blankData(){ const d = seed(); d.clients = []; d.stays = []; d.log = {}
 
 if(syncOn()){
   setInterval(() => { if(document.visibilityState==='visible') syncNow(); }, 30000);
+  // new requests show up quickly: right away when a notification arrives, else every 15 seconds
+  setInterval(() => { if(document.visibilityState==='visible' && !DEMO) loadRequests(); }, 15000);
+  navigator.serviceWorker?.addEventListener('message', e => { if(e.data && e.data.type==='request') loadRequests(); });
   addEventListener('online', () => syncNow());
   document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') syncNow(); });
 }
