@@ -1165,6 +1165,8 @@ function settingsView(){
 
       websiteSection(),
 
+      notifySection(),
+
       syncSection(),
 
       h('div',{class:'sec'},'Backup'),
@@ -1963,6 +1965,52 @@ function ratesSection(){
       h('p',{class:'mut', style:'margin:0'},'Set any of these to 0 for none. Your drop-off and pickup hours are under Online booking.')])];
 }
 
+/* ---------- notifications for new requests (per phone) ----------
+   The phone subscribes with the browser's push service; the subscription is saved in
+   push_subs, and the request-spot server function notifies every saved phone. On iPhone
+   this works only in the app opened from the home screen icon. */
+const VAPID_PUB = 'BKNmU1sCKKgy7frDj1nDGQ-SRB4sJyzhYVorYn5M2fIXWzZwo0ezQp8P1jTgROCf9d-Na-1hBXiHUe7PmwWu8uY';
+const pushOK = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64ToBytes = s => { const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+let PUSH = {state:'?', err:''};   // on, off, blocked, unsupported
+async function pushState(){
+  if(!pushOK()) return PUSH = {state:'unsupported', err:''};
+  if(Notification.permission==='denied') return PUSH = {state:'blocked', err:''};
+  const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+  return PUSH = {state:sub ? 'on' : 'off', err:''};
+}
+async function pushOn(){
+  try {
+    if(await Notification.requestPermission()!=='granted'){ PUSH = {state:'blocked', err:''}; render(); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64ToBytes(VAPID_PUB)});
+    const j = sub.toJSON();
+    await api('/rest/v1/push_subs', {method:'POST', headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({endpoint:j.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth, user_id:Y.session.user})});
+    PUSH = {state:'on', err:''};
+  } catch(e){ PUSH = {state:PUSH.state, err:'Couldn’t turn them on. Check the signal and try again.'}; }
+  render();
+}
+async function pushOff(){
+  try {
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if(sub){ await api('/rest/v1/push_subs?endpoint=eq.'+encodeURIComponent(sub.endpoint), {method:'DELETE'}).catch(() => {}); await sub.unsubscribe(); }
+    PUSH = {state:'off', err:''};
+  } catch(e){ PUSH = {state:PUSH.state, err:'Couldn’t turn them off. Try again.'}; }
+  render();
+}
+function notifySection(){
+  if(DEMO || !synced()) return null;
+  if(PUSH.state==='?') pushState().then(render, () => {});
+  const st = PUSH.state;
+  return [h('div',{class:'sec'},'Notifications'),
+    h('p',{class:'mut', style:'margin-top:0'}, 'Get a notification on this phone when someone sends a booking request.'),
+    st==='unsupported' ? h('div',{class:'warn'}, 'This browser can’t get notifications. On an iPhone, add the app to the home screen (Share, Add to Home Screen) and open it from the icon.')
+    : st==='blocked' ? h('div',{class:'warn'}, 'Notifications are blocked for this app. Allow them in the phone’s settings, then come back here.')
+    : field('On this phone', seg([['on','On'],['off','Off']], st==='on' ? 'on' : 'off', v=>{ v==='on' ? pushOn() : pushOff(); })),
+    PUSH.err && h('p',{class:'err'}, PUSH.err),
+    st==='on' && h('p',{class:'mut', style:'margin:0'}, 'To silence them for a while, use the phone’s Focus or Do Not Disturb.')];
+}
 /* ---------- online booking rules (Settings) ----------
    Kept in the shared settings record, so the public request page and the database's
    spot counter read the same rules the app shows. */
@@ -2720,6 +2768,7 @@ S = migrate(S) || seed();
 // the demo's stays are placed around the day it was built, so a new day gets fresh sample data (keeping the calendar filter)
 if(DEMO && S.seeded !== today()){ const kf = S.kf; S = seed(); if(kf) S.kf = kf; saveLocal(); }
 if(DEMO){ S.reqs ||= demoRequests(); loadRequests(); }
+if(new URLSearchParams(location.search).get('tab')==='reqs'){ U.tab = 'reqs'; history.replaceState(null, '', location.pathname); }
 render();
 syncNow();   // catch up with other phones as soon as the app opens
 
