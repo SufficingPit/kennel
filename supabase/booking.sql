@@ -14,7 +14,7 @@
 create table if not exists public.requests (
   id          uuid primary key default gen_random_uuid(),
   created_at  timestamptz not null default now(),
-  status      text not null default 'pending' check (status in ('pending','approved','declined','cancelled')),
+  status      text not null default 'pending' check (status in ('pending','approved','declined','cancelled','deleted')),
   start_date  date not null,
   end_date    date not null,
   arr         text,                 -- drop-off time, 'HH:MM'
@@ -34,6 +34,9 @@ create table if not exists public.requests (
   token       uuid not null default gen_random_uuid() unique   -- the customer's status link
 );
 create index if not exists requests_open on public.requests (status, start_date);
+-- 'deleted': hidden by the kennel (kept, like everything else, for the backups)
+alter table public.requests drop constraint if exists requests_status_check;
+alter table public.requests add constraint requests_status_check check (status in ('pending','approved','declined','cancelled','deleted'));
 -- the page sends a fresh key with each request, so a double tap or a resend after a dropped
 -- connection gives back the same request instead of making a second one
 alter table public.requests add column if not exists client_key uuid unique;
