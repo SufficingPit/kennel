@@ -1467,6 +1467,8 @@ function clientSheet(u){
     h('div',{class:'sec'},'Who else may pick up'),
     tf(c,'pickupBy','Names',sv,{ph:'Besides the owners'}),
     h('div',{class:'sec'},'Waiver'),
+    !isNew && G.list.filter(g => g.client_id===c.id).map(g => h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
+      h('span',{class:'grow'}, h('b',{}, 'Guest form'), h('div',{class:'mut'}, (g.pets || '')+' · sent '+ymd(g.created_at.slice(0,10)))), h('span',{class:'chev'}, '›'))),
     field('Date signed', h('div',{class:'row'},
       fieldBtn(c.signed && ymd(c.signed), 'Not signed', ()=>pickDate('Waiver signed', c.signed, v=>{ c.signed=v; if(!isNew) save(); })),
       !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
@@ -2150,6 +2152,7 @@ const ago = iso => { const m = Math.round((Date.now() - Date.parse(iso))/60000);
   return m < 1 ? 'just now' : m < 60 ? plural(m,'minute')+' ago' : m < 60*24 ? plural(Math.round(m/60),'hour')+' ago' : plural(Math.round(m/1440),'day')+' ago'; };
 
 async function loadRequests(){
+  loadForms();
   if(DEMO){ R = {list:(S.reqs || []).filter(r => r.status!=='deleted'), loaded:true, err:''}; return; }
   if(!synced() || Y.session.dead) return;
   const since = new Date(Date.now() - 90*864e5).toISOString();
@@ -2205,9 +2208,135 @@ function reqsView(){
       !S.book.on && h('div',{class:'warn'},'Online requests are turned off. Turn them on in Settings, Online booking.'),
       R.err && h('p',{class:'err'}, R.err),
       toText().length > 0 && [h('div',{class:'sec'},'Texts to send'), toText().map(textCard)],
+      gNew().length > 0 && [h('div',{class:'sec'},'New guest forms'), gNew().map(formCard)],
       wait.length ? [h('div',{class:'sec'},'Waiting for you'), wait.map(reqCard)]
-        : !toText().length && h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
+        : !toText().length && !gNew().length && h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
       done.length > 0 && [h('div',{class:'sec'},'Answered'), done.map(reqCard)])];
+}
+
+/* ============================== NEW GUEST FORMS ==============================
+   Filled out online on the website (guest-form.html), kept in the guest_forms table.
+   New ones show under Requests; filing one fills in the family and its pets (only what's
+   still blank there) and keeps the form with the family to view or print. */
+let G = {list:[], loaded:false};
+// a short message at the bottom of the screen
+function toast(msg){ const t = h('div',{role:'status', style:'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:90;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:15px;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.25)'}, msg);
+  document.body.append(t); setTimeout(() => t.remove(), 3500); }
+const gNew = () => G.list.filter(g => g.status==='new');
+async function loadForms(){
+  if(DEMO){ G = {list:(S.gforms || []).filter(g => g.status!=='deleted'), loaded:true}; return; }
+  if(!synced() || Y.session.dead) return;
+  try {
+    const list = await api('/rest/v1/guest_forms?select=*&status=neq.deleted&order=created_at.desc&limit=300');
+    const before = JSON.stringify(G.list);
+    G = {list, loaded:true};
+    if(JSON.stringify(list) !== before) quietRender();
+  } catch(e) {}
+}
+function saveForm(g, fields){
+  Object.assign(g, fields);
+  if(DEMO){ saveLocal(); return; }
+  api('/rest/v1/guest_forms?id=eq.'+g.id, {method:'PATCH', headers:{Prefer:'return=minimal'}, body:JSON.stringify(fields)})
+    .catch(() => { toast('Couldn’t save that to the server. Check the connection.'); });
+}
+const gfName = g => { const o = g.data?.owner || {}; return ((o.first||'')+' '+(o.last||'')).trim() || g.name; };
+function formCard(g){
+  return h('button',{class:'card', onclick:()=>open({t:'gform', id:g.id})},
+    h('div',{class:'row'}, h('b',{}, gfName(g)), g.status==='filed' ? h('span',{class:'pill ok'}, 'Filed') : h('span',{class:'pill'}, 'New guest form')),
+    h('div',{}, g.pets || 'No pets'),
+    h('div',{class:'mut'}, 'Sent '+ago(g.created_at)));
+}
+const yesNoText = v => v==='yes' ? 'Yes' : v==='no' ? 'No' : '';
+const dobText = v => /^\d{4}-\d\d-\d\d$/.test(v||'') ? ymd(v)+' ('+ageOf(v)+')' : v || '';
+function formSheet(u){
+  const g = G.list.find(x => x.id===u.id); if(!g) return null;
+  const d = g.data || {}, O = d.owner || {}, filed = g.status==='filed', fc0 = filed && client(g.client_id);
+  if(u.fam===undefined){ const m = guessFamily({name:gfName(g), phone:g.phone || '', pets:(d.pets || []).map(p => ({name:p.name || ''}))});
+    u.fam = m ? m.c.id : 'new'; u.how = m ? m.how : ''; }
+  const fc = u.fam!=='new' && client(u.fam);
+  const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
+  const join = (...a) => a.filter(Boolean).join(' · ');
+  const pickFam = () => pickList({title:'Which family?', search:'Search family, pet or phone', focus:true,
+    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===u.fam})),
+    onPick: id => { u.fam = id; u.how = ''; },
+    action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
+  const sp = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Small mammal') : 'Dog';
+  return sheet('Guest form', [
+    filed && h('div',{class:'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
+      fc0 && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>open({t:'client', id:fc0.id})}, 'Open the '+fc0.name+' family ›'))),
+    h('div',{class:'sec'}, 'Owner'),
+    h('div',{class:'card'}, h('b',{}, gfName(g)),
+      line('Cell', O.cell), line('Main', O.main), line('Work', O.work), line('Email', O.email), line('Lives in', [O.city, O.state, O.zip].filter(Boolean).join(', ')),
+      h('div',{class:'mut'}, 'Sent '+ago(g.created_at))),
+    (O.coName || O.emName || O.vet || O.pickupBy) && [h('div',{class:'sec'}, 'Contacts'), h('div',{class:'card'},
+      line('Co-owner', join(O.coName, O.coMain, O.coAlt)), line('Emergency', join(O.emName, O.emMain, O.emAlt)),
+      line('Vet', join(O.vet, O.vetPhone)), line('May pick up', O.pickupBy))],
+    (d.pets || []).map(p => [h('div',{class:'sec'}, (p.name || 'Pet')+' · '+sp(p)), h('div',{class:'card'},
+      line('Breed', p.breed), line('Color', p.color), line('Born', dobText(p.dob)),
+      line('Sex', join(p.sex==='m' ? 'Male' : p.sex==='f' ? 'Female' : '', p.fixed==='yes' ? (p.sex==='f' ? 'Spayed' : 'Neutered') : p.fixed==='no' ? 'Not fixed' : '')),
+      line('Conditions', p.conditions),
+      (p.meds || []).map(m => line('Meds', [m.name, m.dose, m.freq, m.instr].filter(Boolean).join(', '))),
+      line('Diet', p.diet), line('Food', p.food), line('Times a day', p.perDay), line('Diet notes', p.dietNotes),
+      line('Treats', p.treats==='yes' ? 'Yes'+(p.treatFav ? ', especially '+p.treatFav : '') : p.treats==='no' ? 'No, on a diet' : ''),
+      line('Personality', (p.personality || []).join(', ')), line('Good with', (p.along || []).join(', ')),
+      line('Also know', p.alsoKnow), line('Notes', p.notes), line('Likes', p.likes), line('Dislikes', p.dislikes),
+      line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)))]),
+    h('div',{class:'sec'}, 'Waiver'),
+    h('div',{class:'card'}, d.sign ? 'Agreed and signed by '+(d.sign.name || '')+(d.sign.date ? ', '+ymd(d.sign.date) : '') : 'Not signed',
+      d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'})),
+    !filed && [h('div',{class:'sec'}, 'File it on'),
+      fieldBtn(fc ? fc.name+' family' : 'New family: '+(O.last || lastName(g.name)), '', pickFam,
+        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : ''),
+      h('p',{class:'mut', style:'margin-top:6px'}, 'Fills in anything still blank on the family and its pets, adds new pets, and adds their meds to each pet’s care.')],
+    h('div',{class:'row', style:'margin:22px 0 8px'}, btn('Print', ()=>printForm(g), 'b2 sm'),
+      btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. Anything already filled in on the family stays. This can’t be undone.', 'Delete', ()=>{
+        saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad'))
+  ], filed ? btn('Done', close) : [btn('Not now', close, 'b2'), btn('File it', ()=>fileForm(g, u.fam))]);
+}
+function fileForm(g, famId){
+  const d = g.data || {}, O = d.owner || {};
+  let c = famId!=='new' && client(famId);
+  if(!c){ c = fillClient({id:uid('c'), first:(O.first||'').trim(), name:(O.last||'').trim() || lastName(g.name)}); S.clients.push(c); }
+  const put = (obj, k, v) => { v = typeof v==='string' ? v.trim() : v; if(v && !obj[k]) obj[k] = v; };
+  const tel = v => v && fmtPhone(String(v).trim());
+  put(c,'first',O.first); put(c,'email',O.email); put(c,'cell',tel(O.cell)); put(c,'phone',tel(O.main)); put(c,'work',tel(O.work));
+  ['city','state','zip','coName','emName','vet','pickupBy'].forEach(k => put(c, k, O[k]));
+  ['coMain','coAlt','emMain','emAlt','vetPhone'].forEach(k => put(c, k, tel(O[k])));
+  if(d.sign?.date && (!c.signed || c.signed < d.sign.date)) c.signed = d.sign.date;
+  (d.pets || []).forEach(fp => {
+    const nm = (fp.name || '').trim(); if(!nm) return;
+    let p = c.pets.find(x => x.name.toLowerCase()===nm.toLowerCase());
+    if(!p){ p = newPet(nm, ['dog','cat','other'].includes(fp.species) ? fp.species : 'dog'); c.pets.push(p); }
+    ['breed','color','sex','fixed','conditions','diet','food','perDay','dietNotes','treats','treatFav','jumps','bites','fights','chews','likes','dislikes'].forEach(k => put(p, k, fp[k]));
+    if(/^\d{4}-\d\d-\d\d$/.test(fp.dob || '')) put(p, 'dob', fp.dob);
+    if(fp.species==='other') put(p, 'other', fp.other);
+    if(!p.personality.length && fp.personality?.length) p.personality = fp.personality.slice(0, 1);
+    if(!p.along.length && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
+    const note = [fp.alsoKnow, fp.notes].map(x => (x || '').trim()).filter(Boolean).join('\n');
+    if(note && !(p.notes || '').includes(note)) p.notes = p.notes ? p.notes+'\n'+note : note;
+    // their meds join the pet's usual care as "as needed" until she sets the times
+    (fp.meds || []).forEach(m => { const t = [m.name, m.dose, m.freq, m.instr].map(x => (x || '').trim()).filter(Boolean).join(', ');
+      if(t && !p.plan.some(x => x.tag==='meds' && x.note===t)) p.plan.push(task('meds', [], t)); });
+  });
+  saveForm(g, {status:'filed', client_id:c.id, filed_at:new Date().toISOString()});
+  U.sh = {t:'client', id:c.id}; commit();
+}
+// prints the form as the paper form, drawn by the website's own guest-paper.js
+let paperJs = null;
+async function printForm(g){
+  try {
+    paperJs ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = SITE_URL+'guest-paper.js'; sc.onload = ok; sc.onerror = () => { paperJs = null; no(); }; document.head.append(sc); });
+    await paperJs;
+  } catch(e){ toast('Couldn’t load the form. Check the connection.'); return; }
+  const css = h('style',{}, guestPaperCSS+'@media print{#app{display:none!important}#print{display:block!important}}'), font = h('link',{rel:'stylesheet', href:GUEST_FONTS});
+  document.head.append(font, css);
+  const el = document.getElementById('print');
+  el.innerHTML = guestPaper({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)}, SITE_URL);
+  await document.fonts.ready.catch(() => {});
+  await Promise.all([...el.querySelectorAll('img')].map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
+  const old = document.title; document.title = ('Guest form '+gfName(g)).replace(/[^\w &-]/g,'');
+  window.print();
+  document.title = old; css.remove(); font.remove(); el.replaceChildren();
 }
 
 function reqSheet(u){
@@ -2742,7 +2871,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
@@ -2775,13 +2904,13 @@ function render(){
   // "New stay" lives in the middle of the tab bar so it never covers anything on the page
   const newDay = U.tab==='today' ? (U.day||today()) : U.range ? (U.range.start<=today() && today()<=U.range.end ? today() : U.range.start)
     : (U.wk<=today() && today()<=addDays(U.wk,6) ? today() : U.wk);
-  const nReq = reqWaiting().length + toText().length;
+  const nReq = reqWaiting().length + toText().length + gNew().length;
   const tab = ([k,n]) => h('button',{class:U.tab===k?'on':'', 'aria-current':U.tab===k?'page':false, onclick:()=>{ if(k==='today' && U.tab!=='today') U.day=null; if(k==='reqs') loadRequests(); U.tab=k; U.sh=null; render(); scrollTo(0,0); }},
       h('span',{html:ICONS[k], style:'display:flex;position:relative'}, k==='reqs' && nReq ? h('span',{class:'bdg', 'aria-label':nReq+' waiting'}, nReq) : null), n);
   const tabs = h('nav',{class:'tabs'},
     [['cal','Calendar'],['today','Today']].map(tab),
     h('button',{class:'newtab', 'aria-label':'New stay', onclick:()=>open({t:'form', f:newStayDraft(null, newDay)})}, h('span',{class:'plus'},'+'), 'New stay'),
-    [['clients','Clients'], (S.book.on || R.list.length || U.tab==='reqs') && ['reqs','Requests'], ['settings','Settings']].filter(Boolean).map(tab));
+    [['clients','Clients'], (S.book.on || R.list.length || G.list.length || U.tab==='reqs') && ['reqs','Requests'], ['settings','Settings']].filter(Boolean).map(tab));
   const fab = null;
   const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
   if(U.sh && !sh) U.sh = null;
@@ -2804,7 +2933,20 @@ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
 S = migrate(S) || seed();
 // the demo's stays are placed around the day it was built, so a new day gets fresh sample data (keeping the calendar filter)
 if(DEMO && S.seeded !== today()){ const kf = S.kf; S = seed(); if(kf) S.kf = kf; saveLocal(); }
-if(DEMO){ S.reqs ||= demoRequests(); loadRequests(); }
+if(DEMO){ S.reqs ||= demoRequests(); S.gforms ||= demoForms(); loadRequests(); }
+// a sample guest form for the demo, as the website sends it
+function demoForms(){
+  const ago = h => new Date(Date.now() - h*3600e3).toISOString();
+  return [{id:'gf-demo1', created_at:ago(5), status:'new', name:'Jordan Price', phone:'555-0171', pets:'Scout, Pickles',
+    data:{date:today(), owner:{first:'Jordan', last:'Price', cell:'555-0171', email:'jordan@example.com', city:'Holdrege', state:'NE', zip:'68949',
+      emName:'Casey Price', emMain:'555-0172', vet:'Maple Creek Vet Clinic', vetPhone:'555-0100', pickupBy:'Casey Price'},
+      pets:[{species:'dog', name:'Scout', breed:'Border collie', color:'Black & white', dob:addDays(today(), -365*4), sex:'f', fixed:'yes',
+        conditions:'Sensitive stomach', meds:[{name:'Galliprant', dose:'60 mg', freq:'Once a day', instr:'With breakfast'}],
+        diet:'Kibble morning and night', food:'Purina Pro Plan Sensitive, 1 cup', perDay:'2', treats:'yes', treatFav:'carrots',
+        personality:['Playful'], along:['Dogs','Humans'], notes:'Herds the other dogs.', jumps:'yes', bites:'no', fights:'no', likes:'Frisbees', dislikes:'Thunder', chews:'no'},
+       {species:'cat', name:'Pickles', breed:'Domestic shorthair', color:'Grey tabby', sex:'m', fixed:'yes', meds:[], personality:['Shy at first'], along:[], treats:'no'}],
+      sign:{name:'Jordan Price', date:today(), img:''}}}];
+}
 if(new URLSearchParams(location.search).get('tab')==='reqs'){ U.tab = 'reqs'; history.replaceState(null, '', location.pathname); }
 render();
 syncNow();   // catch up with other phones as soon as the app opens
