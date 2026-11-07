@@ -2234,7 +2234,9 @@ function reqSheet(u){
       h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
     h('div',{class:'sec'},'Pets'),
     h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : p.species==='other' ? (p.kind || 'Other') : 'Dog')+(p.breed ? ', '+p.breed : '')
-        +(p.species==='other' ? (p.cage===false ? ' · needs a cage or condo' : ' · bringing a cage') : ''))),
+        +(p.species==='other' ? (p.cage===false ? ' · needs a cage or condo' : ' · bringing a cage') : ''),
+        p.meds && h('div',{class:'mut', style:'white-space:pre-wrap'}, h('b',{style:'color:var(--ink)'}, 'Meds: '), p.meds),
+        p.note && h('div',{class:'mut', style:'white-space:pre-wrap'}, 'Note: '+p.note))),
       r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r)),
       h('div',{class:'mut', style:'margin-top:4px'}, r.own_food ? 'Bringing their own food' : 'Using your food')),
     h('div',{class:'sec'},'Contact'),
@@ -2257,9 +2259,12 @@ function approveReq(r, famId){
   const ids = r.pets.map(p => {
     let q = c.pets.find(x => x.name.toLowerCase()===p.name.trim().toLowerCase());
     if(!q){ q = newPet(p.name.trim(), p.species); q.breed = p.breed || ''; if(p.species==='other') q.other = p.kind || ''; c.pets.push(q); }
+    const note = (p.note || '').trim();
+    if(note && !(q.notes || '').includes(note)) q.notes = q.notes ? q.notes+'\n'+note : note;
     return q.id;
   });
   save();
+  r._ids = ids;
   r._own = ids.filter((id, i) => r.pets[i].species==='other' && r.pets[i].cage!==false);   // brought their own cage
   // which pets go together: one kennel per kind when they share, else one each
   const kindOf = id => findPet(id).p.species==='dog' ? 'dog' : 'cat';   // other pets go where cats do
@@ -2281,7 +2286,15 @@ function openReqStay(r, cid, groups, made){
 // called by the stay form after it books a stay for a request
 function reqStayBooked(f, sid){
   const r = R.list.find(x => x.id===f.req), made = [...f.made, sid];
-  if(r.own_food){ const st = S.stays.find(x => x.id===sid); if(st){ st.ownFood = true; save(); } }
+  const st = S.stays.find(x => x.id===sid);
+  if(st && r.own_food) st.ownFood = true;
+  const medPets = st ? r.pets.map((p, i) => p.meds && {p, id:(r._ids||[])[i]}).filter(x => x && st.pets.includes(x.id)) : [];
+  if(medPets.length){
+    st.extra = [...(st.extra||[]), ...medPets.map(x => task('meds', [], x.p.meds, x.id))];
+    const R0 = S.rates || defaultRates(), n = Math.max(1, daysBetween(st.start, st.end));
+    if(R0.meds) (st.charges ||= []).push({id:uid('c'), label:'Medications given', amt:R0.meds, qty:n*medPets.length});
+  }
+  if(st) save();
   if(f.queue.length) return openReqStay(r, f.client, f.queue, made);
   answerReq(r, {status:'approved', stay_id:made.join(','), texted:false});
   open({t:'reqans', id:r.id, act:'approved'});
