@@ -145,7 +145,9 @@ end $$;
 create or replace function public.booking_info() returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object('on', coalesce((b->>'on')::boolean, false), 'offNote', b->'offNote', 'hours', b->'hours', 'fee', b->'fee', 'eveFee', b->'eveFee', 'eveFrom', b->'eveFrom',
-    'minN', b->'minN', 'lead', b->'lead', 'ahead', b->'ahead', 'today', book_today(b))
+    'minN', b->'minN', 'lead', b->'lead', 'ahead', b->'ahead', 'today', book_today(b),
+    -- per-night rates and fees from the app, so the page can show an estimate
+    'rates', (select data->'rates' from records where kind='settings' and id='main' and not deleted))
   from (select book_rules() b) x
 $$;
 
