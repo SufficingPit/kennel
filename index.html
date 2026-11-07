@@ -2331,7 +2331,7 @@ async function printForm(g){
   const css = h('style',{}, guestPaperCSS+'@media print{#app{display:none!important}#print{display:block!important}}'), font = h('link',{rel:'stylesheet', href:GUEST_FONTS});
   document.head.append(font, css);
   const el = document.getElementById('print');
-  el.innerHTML = guestPaper({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)}, SITE_URL);
+  el.innerHTML = guestPaper({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)}, SITE_URL, {lineart:true});
   await document.fonts.ready.catch(() => {});
   // measured while shown off to the side: the print area is hidden on screen
   el.style.cssText = 'display:block;position:absolute;left:-10000px;top:0'; if(window.guestPaperFit) guestPaperFit(el); el.style.cssText = '';
