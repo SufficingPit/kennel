@@ -236,3 +236,20 @@ grant execute on function public.booking_days(date, date), public.booking_check(
 -- spam check first; only that function (with the secret key) may call request_spot.
 revoke execute on function public.request_spot(jsonb) from public, anon, authenticated;
 grant execute on function public.request_spot(jsonb) to service_role;
+
+-- Phones that get a notification for new requests (Settings > Notifications in the app).
+-- Each signed-in user manages their own; the request-spot function reads them with the
+-- service key and drops ones the push service says are gone.
+create table if not exists public.push_subs (
+  endpoint   text primary key,
+  p256dh     text not null,
+  auth       text not null,
+  user_id    uuid not null default auth.uid() references auth.users(id),
+  created_at timestamptz not null default now()
+);
+revoke all on public.push_subs from anon, authenticated, service_role;
+grant select, insert, update, delete on public.push_subs to authenticated;
+grant select, delete on public.push_subs to service_role;
+alter table public.push_subs enable row level security;
+drop policy if exists "own phones" on public.push_subs;
+create policy "own phones" on public.push_subs for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());

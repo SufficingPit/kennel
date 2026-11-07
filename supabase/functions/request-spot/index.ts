@@ -3,6 +3,10 @@
 // 2. Calls request_spot() with the service key, which re-checks every rule and holds the spot.
 // Deploy with "Verify JWT" OFF (the public page has no login). Needs the secret TURNSTILE_SECRET.
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase automatically.
+// 3. Sends a notification to every phone that turned them on (push_subs), if the secret
+//    VAPID_PRIVATE is set. A failed notification never fails the request.
+import webpush from "npm:web-push@3.6.7";
+const VAPID_PUB = "BKNmU1sCKKgy7frDj1nDGQ-SRB4sJyzhYVorYn5M2fIXWzZwo0ezQp8P1jTgROCf9d-Na-1hBXiHUe7PmwWu8uY";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,5 +43,38 @@ Deno.serve(async (req) => {
     body: JSON.stringify({ p: body.p }),
   });
   if (!r.ok) return reply({ ok: false, reason: "Couldn’t send. Please try again." }, 502);
-  return reply(await r.json());
+  const out = await r.json();
+  if (out?.ok) await notify(url, key, body.p).catch(() => {});
+  return reply(out);
 });
+
+const md = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+async function notify(url: string, key: string, p: Record<string, any>) {
+  const priv = Deno.env.get("VAPID_PRIVATE");
+  if (!priv) return;
+  webpush.setVapidDetails("mailto:littlevillagepetlodge@outlook.com", VAPID_PUB, priv.trim());
+  const subs = await fetch(url + "/rest/v1/push_subs?select=endpoint,p256dh,auth", {
+    headers: { apikey: key, Authorization: "Bearer " + key },
+  }).then((x) => x.ok ? x.json() : []);
+  const pets = (p.pets || []) as { species: string }[];
+  const n = (sp: string) => pets.filter((x) => x.species === sp).length;
+  const what = [n("dog") && n("dog") + (n("dog") === 1 ? " dog" : " dogs"), n("cat") && n("cat") + (n("cat") === 1 ? " cat" : " cats"),
+    n("other") && n("other") + (n("other") === 1 ? " other pet" : " other pets")].filter(Boolean).join(", ");
+  const msg = JSON.stringify({
+    title: "New request: " + String(p.name || "").trim(),
+    body: md(String(p.start)) + " – " + md(String(p.end)) + (what ? " · " + what : ""),
+    url: "./?tab=reqs", tag: "request-" + Date.now(),
+  });
+  await Promise.all(subs.map(async (s: { endpoint: string; p256dh: string; auth: string }) => {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, msg, { TTL: 86400 });
+    } catch (e: any) {
+      // the phone unsubscribed or the app was removed: forget it
+      if (e?.statusCode === 404 || e?.statusCode === 410) {
+        await fetch(url + "/rest/v1/push_subs?endpoint=eq." + encodeURIComponent(s.endpoint), {
+          method: "DELETE", headers: { apikey: key, Authorization: "Bearer " + key },
+        });
+      }
+    }
+  }));
+}
