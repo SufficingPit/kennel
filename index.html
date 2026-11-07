@@ -1113,15 +1113,27 @@ function matchClient(c, q){
   return c.name.toLowerCase().includes(q) || c.pets.some(p=>p.name.toLowerCase().includes(q)) || (qd.length>2 && allPhones(c).some(x=>x.includes(qd))) || (c.first||'').toLowerCase().includes(q);
 }
 const byName = (a,b) => a.name.localeCompare(b.name);
-const clientLine = c => [c.pets.map(p=>p.name).join(', ') || 'No pets yet', bestPhone(c)].filter(Boolean).join(' · ');
+/* Archiving keeps history: an archived family (c.archived) or a pet that no longer comes (p.gone)
+   is hidden from lists and pickers, but their past stays, details and forms stay as they were.
+   They come back on their own when they book again, or with "Bring back". Deleting for good is
+   still there, behind the archive. */
+const livePets = c => c.pets.filter(p => !p.gone);
+const liveClients = () => S.clients.filter(c => !c.archived);
+// upcoming stays not yet checked in, for one family (or just the stays with one pet)
+const upcomingStays = (cid, pid) => { const c = client(cid), mine = new Set(pid ? [pid] : c.pets.map(p => p.id));
+  return S.stays.filter(s => s.status==='booked' && s.start >= today() && s.pets.some(i => mine.has(i))); };
+const clientLine = c => [livePets(c).map(p=>p.name).join(', ') || 'No pets yet', bestPhone(c)].filter(Boolean).join(' · ');
 
 function clientsView(){
   const list = h('div',{class:'pad'});
   const draw = () => {
-    const res = S.clients.filter(c=>matchClient(c, U.q.trim().toLowerCase())).sort(byName);
-    list.replaceChildren(...(res.length ? res.map(c => h('button',{class:'card row', onclick:()=>open({t:'client',id:c.id})},
-      h('div',{class:'grow'}, h('b',{}, c.name+' family'), h('div',{class:'mut'}, clientLine(c))),
-      h('span',{class:'mut'},'›'))) : [h('p',{class:'empty', style:U.q.trim() ? '' : 'padding-top:40px'}, U.q.trim() ? 'No family matches “'+U.q.trim()+'”.' : 'No families yet.')]));
+    const q = U.q.trim().toLowerCase(), all = S.clients.filter(c=>matchClient(c, q)).sort(byName);
+    const res = q || U.showArch ? all : all.filter(c => !c.archived), nArch = S.clients.filter(c => c.archived).length;
+    const row = c => h('button',{class:'card row', onclick:()=>open({t:'client',id:c.id})},
+      h('div',{class:'grow'}, h('b',{}, c.name+' family'), c.archived && h('span',{class:'pill', style:'margin-left:6px'}, 'Archived'), h('div',{class:'mut'}, clientLine(c))),
+      h('span',{class:'mut'},'›'));
+    list.replaceChildren(...(res.length ? res.map(row) : [h('p',{class:'empty', style:q ? '' : 'padding-top:40px'}, q ? 'No family matches “'+U.q.trim()+'”.' : 'No families yet.')]),
+      !q && nArch ? h('button',{class:'lk', style:'margin-top:8px', onclick:()=>{ U.showArch = !U.showArch; draw(); }}, U.showArch ? 'Hide archived families' : 'Show '+plural(nArch, 'archived family').replace('familys','families')) : '');
   };
   draw();
   return [h('div',{class:'top hdr'}, h('h1',{},'Clients'), btn('+ New family', ()=>open({t:'client', name:U.q.trim()}), 'chip add')),
@@ -1209,7 +1221,7 @@ function newStayDraft(kennelId, date, clientId){
 function pickFamily(u){
   const f = u.f;
   pickList({title:'Choose a family', search:'Search family, pet or phone', focus:true,
-    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===f.client})),
+    items: q => S.clients.filter(c=>(!c.archived || c.id===f.client) && matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===f.client})),
     onPick: id => { if(id!==f.client){ f.client = id; const c = client(id); f.pets = c.pets.length===1 ? [c.pets[0].id] : []; } u.err = ''; },
     action: {label: q => q ? '+ New family “'+q+'”' : '+ New family', fn: q => open({t:'client', name:q, back:u})}});
 }
@@ -1255,7 +1267,7 @@ function stayForm(u){
     field('Family', f.id ? h('div',{class:'fld', style:'border-style:dashed'}, h('span',{class:'v'}, (c?c.name:'?')+' family'))
       : fieldBtn(c && c.name+' family', 'Choose a family', ()=>pickFamily(u), c && bestPhone(c))),
     c && field('Pets', h('div',{class:'chips', style:'margin:0'},
-      c.pets.map(p => chip((f.pets.includes(p.id)?'✓ ':'')+p.name, f.pets.includes(p.id), ()=>{ f.pets = f.pets.includes(p.id) ? f.pets.filter(x=>x!==p.id) : [...f.pets, p.id]; u.err=''; render(); })),
+      c.pets.filter(p => !p.gone || f.pets.includes(p.id)).map(p => chip((f.pets.includes(p.id)?'✓ ':'')+p.name, f.pets.includes(p.id), ()=>{ f.pets = f.pets.includes(p.id) ? f.pets.filter(x=>x!==p.id) : [...f.pets, p.id]; u.err=''; render(); })),
       chip('+ Pet', false, ()=>openNewPet(c, u, true), 'add'))),
     h('div',{class:'row'},
       field('Drop-off', fieldBtn(f.start && wmd(f.start), 'Day', ()=>pickDate('Drop-off day', f.start, v=>{ f.start=v; if(f.end<v) f.end=v; }, {span:[f.start, f.end]}))),
@@ -1438,7 +1450,7 @@ function clientSheet(u){
   const saveNew = () => {
     if(!c.name.trim()){ u.err = 'Enter a last name.'; render(); return; }
     c.name = c.name.trim(); S.clients.push(c); save();
-    if(back){ back.f.client = c.id; back.f.pets = c.pets.map(p=>p.id); back.err=''; open(back); }
+    if(back){ back.f.client = c.id; back.f.pets = livePets(c).map(p=>p.id); back.err=''; open(back); }
     else open({t:'client', id:c.id});
   };
 
@@ -1450,7 +1462,7 @@ function clientSheet(u){
     two(tf(c,'city','City',sv), h('div',{style:'flex:0 0 72px'}, tf(c,'state','State',sv)), h('div',{style:'flex:0 0 92px'}, tf(c,'zip','ZIP',sv,{inputmode:'numeric'}))),
     hint,
     h('div',{class:'sec'},'Pets'),
-    c.pets.map(p => h('button',{class:'card row', onclick:()=>open(isNew ? {t:'pet', p, c, back:u} : {t:'pet', id:p.id, back:u})},
+    c.pets.filter(p => !p.gone).map(p => h('button',{class:'card row', onclick:()=>open(isNew ? {t:'pet', p, c, back:u} : {t:'pet', id:p.id, back:u})},
       h('span',{class:'grow'}, h('b',{}, p.name), flagPills(p), h('div',{class:'mut'}, [speciesLabel(p), p.breed, vaxWarn(p)].filter(Boolean).join(' · '))), h('span',{class:'mut'},'›'))),
     btn('+ Add pet', ()=>openNewPet(c, u), 'chip add'),
 
@@ -1472,15 +1484,31 @@ function clientSheet(u){
     field('Date signed', h('div',{class:'row'},
       fieldBtn(c.signed && ymd(c.signed), 'Not signed', ()=>pickDate('Waiver signed', c.signed, v=>{ c.signed=v; if(!isNew) save(); })),
       !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
+    !isNew && (c.formUpdate
+      ? h('div',{class:'card', style:'margin-top:8px'}, h('b',{}, 'Asked to update their guest form'),
+          h('div',{class:'mut'}, 'Next time they request a stay online, the website asks them to look over their form and send it again.'),
+          btn('Don’t ask', ()=>{ delete c.formUpdate; commit(); }, 'lk'))
+      : h('div',{style:'margin-top:4px'}, btn('Ask them to update their guest form', ()=>{ c.formUpdate = true; commit(); }, 'lk'),
+          h('div',{class:'mut', style:'font-size:13px'}, 'For when their details may have changed. The website asks next time they request a stay.'))),
     h('div',{class:'sec'},'Notes'),
     h('textarea',{'aria-label':'Notes', onchange:e=>{ c.notes=e.target.value.trim(); if(!isNew) commit(); }}, c.notes||''),
     !isNew && [h('div',{class:'sec'},'Stays'),
       stays.length ? stays.map(s => h('button',{class:'card row', onclick:()=>open({t:'stay',id:s.id})},
         h('span',{class:'grow'}, h('b',{}, md(s.start)+' – '+md(s.end)), h('div',{class:'mut'}, petNames(s)+' · '+pieces(s).map(p => kennel(p.k).name).join(' → '))),
         h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)))) : h('p',{class:'mut'},'No stays yet.'),
-      h('div',{style:'margin:24px 0 8px'}, btn('Delete family', ()=>confirmSheet('Delete the '+c.name+' family?', 'Also deletes their '+plural(c.pets.length,'pet')+' and '+plural(stays.length,'stay')+'. This can’t be undone.', 'Delete', ()=>{
-        const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
-      }, u), 'lk bad'))]
+      c.pets.some(p => p.gone) && [h('div',{class:'sec'},'No longer come'),
+        c.pets.filter(p => p.gone).map(p => h('button',{class:'card row', onclick:()=>open({t:'pet', id:p.id, back:u})},
+          h('span',{class:'grow'}, h('b',{}, p.name), h('div',{class:'mut'}, 'Since '+ymd(p.gone))), h('span',{class:'chev'}, '›')))],
+      c.archived
+        ? h('div',{style:'margin:24px 0 8px'},
+            btn('Bring back the '+c.name+' family', ()=>{ delete c.archived; commit(); }, 'b2'),
+            h('div',{style:'margin-top:14px'}, btn('Delete for good', ()=>confirmSheet('Delete the '+c.name+' family for good?', 'Erases them, their '+plural(c.pets.length,'pet')+' and all '+plural(stays.length,'stay')+', past ones too. This can’t be undone.', 'Delete for good', ()=>{
+              const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
+            }, u), 'lk bad')))
+        : h('div',{style:'margin:24px 0 8px'}, btn('Archive family', ()=>{ const up = upcomingStays(c.id);
+            confirmSheet('Archive the '+c.name+' family?', 'They’re hidden from your family list. Their past stays and details are kept, and they come back if they book again.'+(up.length ? ' Their '+plural(up.length,'upcoming stay')+' will be deleted.' : ''), 'Archive', ()=>{
+              const ids = new Set(up.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); c.archived = today();
+            }, u); }, 'lk bad'))]
   ];
   const foot = isNew
     ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back ? ()=>open(back) : close, 'b2'), btn(back ? 'Save & use for stay' : 'Save family', saveNew)]
@@ -1560,12 +1588,20 @@ function petSheet(u){
     h('p',{class:'mut', style:'margin-top:0'},'Feeding, potty breaks and meds. For meds, put the name, dose and instructions in the note. Changes apply from today; earlier days keep what was scheduled.'),
     planEditor(p.plan, null, true),
     !isNew && h('div',{style:'margin:24px 0 8px'}, saved
-      ? btn('Delete '+p.name, ()=>confirmSheet('Delete '+p.name+'?', 'Removes '+p.name+' from their stays. Stays left with no pets are deleted.', 'Delete', ()=>{
-          c.pets = c.pets.filter(y=>y!==p);
-          S.stays.forEach(s=>{ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); });
-          S.stays = S.stays.filter(s=>s.pets.length);
-          U.sh = {t:'client', id:c.id};
-        }, u), 'lk bad')
+      ? (p.gone
+        ? h('div',{}, btn('Bring back '+p.name, ()=>{ delete p.gone; commit(); }, 'b2'),
+            h('div',{style:'margin-top:14px'}, btn('Delete '+p.name+' for good', ()=>confirmSheet('Delete '+p.name+' for good?', 'Erases '+p.name+' and takes them off every stay, past ones too. Stays left with no pets are deleted. This can’t be undone.', 'Delete for good', ()=>{
+              c.pets = c.pets.filter(y=>y!==p);
+              S.stays.forEach(s=>{ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); });
+              S.stays = S.stays.filter(s=>s.pets.length);
+              U.sh = {t:'client', id:c.id};
+            }, u), 'lk bad')))
+        : btn(p.name+' no longer comes', ()=>{ const up = upcomingStays(c.id, p.id);
+            confirmSheet(p.name+' no longer comes?', p.name+' is hidden from new stays. Past stays and their details are kept, and you can bring them back anytime.'+(up.length ? ' They’ll be taken off '+plural(up.length,'upcoming stay')+'; any left with no pets are deleted.' : ''), 'Yes', ()=>{
+              const ids = new Set(up.map(s=>s.id));
+              S.stays.forEach(s=>{ if(ids.has(s.id)){ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); } });
+              S.stays = S.stays.filter(s=>s.pets.length); p.gone = today(); U.sh = {t:'client', id:c.id};
+            }, u); }, 'lk bad'))
       : btn('Remove '+p.name, ()=>{ c.pets = c.pets.filter(y=>y!==p); back(); }, 'lk bad'))
   ], isNew ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back, 'b2'), btn(u.toStay ? 'Add to stay' : 'Add pet', addIt)] : btn('Done', back), back);
 }
@@ -2239,10 +2275,12 @@ function saveForm(g, fields){
   api('/rest/v1/guest_forms?id=eq.'+g.id, {method:'PATCH', headers:{Prefer:'return=minimal'}, body:JSON.stringify(fields)})
     .catch(() => { toast('Couldn’t save that to the server. Check the connection.'); });
 }
+// what kind of form: the whole thing (new), a known family's new pets (pets), or an update she asked for
+const gfKind = g => g.mode==='pets' ? 'New pet page' : g.mode==='update' ? 'Updated guest form' : 'New guest form';
 const gfName = g => { const o = g.data?.owner || {}; return ((o.first||'')+' '+(o.last||'')).trim() || g.name; };
 function formCard(g){
   return h('button',{class:'card', onclick:()=>open({t:'gform', id:g.id})},
-    h('div',{class:'row'}, h('b',{}, gfName(g)), g.status==='filed' ? h('span',{class:'pill ok'}, 'Filed') : h('span',{class:'pill'}, 'New guest form')),
+    h('div',{class:'row'}, h('b',{}, gfName(g)), g.status==='filed' ? h('span',{class:'pill ok'}, 'Filed') : h('span',{class:'pill'}, gfKind(g))),
     h('div',{}, g.pets || 'No pets'),
     h('div',{class:'mut'}, 'Sent '+ago(g.created_at)));
 }
@@ -2257,11 +2295,11 @@ function formSheet(u){
   const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
   const join = (...a) => a.filter(Boolean).join(' · ');
   const pickFam = () => pickList({title:'Which family?', search:'Search family, pet or phone', focus:true,
-    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===u.fam})),
+    items: q => S.clients.filter(c=>(!c.archived || c.id===u.fam || q) && matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family'+(c.archived ? ' (archived)' : ''), sub:clientLine(c), on:c.id===u.fam})),
     onPick: id => { u.fam = id; u.how = ''; },
     action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
   const sp = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Small mammal') : 'Dog';
-  return sheet('Guest form', [
+  return sheet(gfKind(g), [
     filed && h('div',{class:'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
       fc0 && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>open({t:'client', id:fc0.id})}, 'Open the '+fc0.name+' family ›'))),
     h('div',{class:'sec'}, 'Owner'),
@@ -2287,7 +2325,8 @@ function formSheet(u){
     !filed && [h('div',{class:'sec'}, 'File it on'),
       fieldBtn(fc ? fc.name+' family' : 'New family: '+(O.last || lastName(g.name)), '', pickFam,
         fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : ''),
-      h('p',{class:'mut', style:'margin-top:6px'}, 'Fills in anything still blank on the family and its pets, adds new pets, and adds their meds to each pet’s care.')],
+      h('p',{class:'mut', style:'margin-top:6px'}, g.mode==='update' ? 'Replaces the family’s and pets’ details with what they filled in (blank answers keep what you have), adds new pets, and adds their meds to each pet’s care.'
+        : 'Fills in anything still blank on the family and its pets, adds new pets, and adds their meds to each pet’s care.')],
     h('div',{class:'row', style:'margin:22px 0 8px'}, btn('Print', ()=>printForm(g), 'b2 sm'),
       btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. Anything already filled in on the family stays. This can’t be undone.', 'Delete', ()=>{
         saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad'))
@@ -2297,7 +2336,9 @@ function fileForm(g, famId){
   const d = g.data || {}, O = d.owner || {};
   let c = famId!=='new' && client(famId);
   if(!c){ c = fillClient({id:uid('c'), first:(O.first||'').trim(), name:(O.last||'').trim() || lastName(g.name)}); S.clients.push(c); }
-  const put = (obj, k, v) => { v = typeof v==='string' ? v.trim() : v; if(v && !obj[k]) obj[k] = v; };
+  delete c.archived;
+  const upd = g.mode==='update';
+  const put = (obj, k, v) => { v = typeof v==='string' ? v.trim() : v; if(v && (upd || !obj[k])) obj[k] = v; };
   const tel = v => v && fmtPhone(String(v).trim());
   put(c,'first',O.first); put(c,'email',O.email); put(c,'cell',tel(O.cell)); put(c,'phone',tel(O.main)); put(c,'work',tel(O.work));
   ['city','state','zip','coName','emName','vet','pickupBy'].forEach(k => put(c, k, O[k]));
@@ -2306,18 +2347,20 @@ function fileForm(g, famId){
   (d.pets || []).forEach(fp => {
     const nm = (fp.name || '').trim(); if(!nm) return;
     let p = c.pets.find(x => x.name.toLowerCase()===nm.toLowerCase());
+    if(p) delete p.gone;
     if(!p){ p = newPet(nm, ['dog','cat','other'].includes(fp.species) ? fp.species : 'dog'); c.pets.push(p); }
     ['breed','color','sex','fixed','conditions','diet','food','perDay','dietNotes','treats','treatFav','jumps','bites','fights','chews','likes','dislikes'].forEach(k => put(p, k, fp[k]));
     if(/^\d{4}-\d\d-\d\d$/.test(fp.dob || '')) put(p, 'dob', fp.dob);
     if(fp.species==='other') put(p, 'other', fp.other);
-    if(!p.personality.length && fp.personality?.length) p.personality = fp.personality.slice(0, 1);
-    if(!p.along.length && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
+    if((upd || !p.personality.length) && fp.personality?.length) p.personality = fp.personality.slice(0, 1);
+    if((upd || !p.along.length) && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
     const note = [fp.alsoKnow, fp.notes].map(x => (x || '').trim()).filter(Boolean).join('\n');
     if(note && !(p.notes || '').includes(note)) p.notes = p.notes ? p.notes+'\n'+note : note;
     // their meds join the pet's usual care as "as needed" until she sets the times
     (fp.meds || []).forEach(m => { const t = [m.name, m.dose, m.freq, m.instr].map(x => (x || '').trim()).filter(Boolean).join(', ');
       if(t && !p.plan.some(x => x.tag==='meds' && x.note===t)) p.plan.push(task('meds', [], t)); });
   });
+  if(g.mode!=='pets') delete c.formUpdate;   // she asked for an update and got it
   saveForm(g, {status:'filed', client_id:c.id, filed_at:new Date().toISOString()});
   U.sh = {t:'client', id:c.id}; commit();
 }
@@ -2348,7 +2391,7 @@ function reqSheet(u){
   if(u.fam===undefined) u.fam = g ? g.c.id : 'new', u.how = g ? g.how : '';
   const fc = u.fam!=='new' && client(u.fam);
   const pickFam = () => pickList({title:'Which family?', search:'Search family, pet or phone', focus:true,
-    items: q => S.clients.filter(c=>matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family', sub:clientLine(c), on:c.id===u.fam})),
+    items: q => S.clients.filter(c=>(!c.archived || c.id===u.fam || q) && matchClient(c,q)).sort(byName).map(c => ({id:c.id, label:c.name+' family'+(c.archived ? ' (archived)' : ''), sub:clientLine(c), on:c.id===u.fam})),
     onPick: id => { u.fam = id; u.how = ''; },
     action: {label: () => '+ New family “'+lastName(r.name)+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
   const line = (k, v) => v && h('div',{}, h('b',{}, k+' '), v);
@@ -2375,6 +2418,7 @@ function reqSheet(u){
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
         h('a',{class:'chip', href:'sms:'+num}, 'Text'), h('a',{class:'chip', href:'tel:'+num}, 'Call'))),
       r.email && h('div',{style:'margin-top:6px'}, h('a',{href:'mailto:'+r.email}, r.email))),
+    (r.status==='pending' || r.status==='approved') && reqFormLine(r, fc),
     reqBringing(r) && [h('div',{class:'sec'},'Bringing'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqBringing(r))],
     reqNote(r) && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqNote(r))],
     r.status==='pending' && [h('div',{class:'sec'},'Family'),
@@ -2388,8 +2432,10 @@ function reqSheet(u){
 function approveReq(r, famId){
   let c = famId!=='new' && client(famId);
   if(!c){ c = fillClient({id:uid('c'), first:firstName(r.name), name:lastName(r.name), cell:fmtPhone(r.phone), email:r.email||''}); S.clients.push(c); }
+  delete c.archived;   // booking again brings an archived family back
   const ids = r.pets.map(p => {
     let q = c.pets.find(x => x.name.toLowerCase()===p.name.trim().toLowerCase());
+    if(q) delete q.gone;
     if(!q){ q = newPet(p.name.trim(), p.species); q.breed = p.breed || ''; if(p.species==='other') q.other = p.kind || ''; c.pets.push(q); }
     const note = (p.note || '').trim();
     if(note && !(q.notes || '').includes(note)) q.notes = q.notes ? q.notes+'\n'+note : note;
@@ -2405,6 +2451,17 @@ function approveReq(r, famId){
   const groups = lettered ? Object.values(r.pets.reduce((m, p, i) => { (m[kindOf(ids[i])+'|'+(p.species==='other' ? 'other'+i : p.group||i)] ||= []).push(ids[i]); return m; }, {}))
     : r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
   openReqStay(r, c.id, groups, []);
+}
+// Guest form for a request: sent from its page, or what the website is asking them for.
+function reqFormLine(r, fc){
+  const g = G.list.find(x => x.req_token===r.token);
+  if(g) return [h('div',{class:'sec'},'Guest form'), h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
+    h('span',{class:'grow'}, h('b',{}, gfKind(g)), h('div',{class:'mut'}, (g.status==='filed' ? 'Filed' : 'Sent '+ago(g.created_at))+' · '+(g.pets || ''))), h('span',{class:'chev'}, '›'))];
+  const known = fc ? fc.pets.map(p => p.name.trim().toLowerCase()) : [];
+  const newPets = r.pets.map(p => p.name.trim()).filter(nm => !known.includes(nm.toLowerCase()));
+  const want = !fc ? 'The website asked them for a new guest form.' : fc.formUpdate ? 'The website asked them to update their guest form.'
+    : newPets.length ? 'The website asked them for a page for '+petList(newPets)+'.' : '';
+  return want && [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, want, h('div',{class:'mut'}, 'Not sent yet. They may bring it on paper instead.'))];
 }
 // the website sends what they're bringing as the note's first line: "Bringing: bed, leash"
 const reqBringing = r => { const m = /^Bringing: (.*)/.exec(r.notes || ''); return m ? m[1].trim() : ''; };
