@@ -1881,7 +1881,7 @@ function billFor(s){
   if(pets.length > 1 && R0.share) lines.push({key:'share', label:'Sharing a kennel', sub:pets.length+' pets × '+plural(nights,'night')+' × '+money(-R0.share), amt:-pets.length*nights*R0.share});
   if(B.fee && offHours(s.start, s.arr)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(s.arr), amt:B.fee});
   if(B.fee && offHours(s.end, s.pick)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(s.pick), amt:B.fee});
-  else if(B.eveFee && s.pick >= (B.eveFrom || '16:00')) lines.push({key:'eve', label:'Evening pickup', sub:t12(s.pick), amt:B.eveFee});
+  else if(B.eveFee && !s.ownFood && s.pick >= (B.eveFrom || '16:00')) lines.push({key:'eve', label:'Evening pickup (meal)', sub:t12(s.pick), amt:B.eveFee});
   lines.forEach(l => { l.auto = true; l.waived = waived.has(l.key); });
   (s.charges||[]).forEach(c => lines.push({id:c.id, label:c.label || (c.amt < 0 ? 'Discount' : 'Extra charge'), sub:c.qty > 1 ? c.qty+' × '+money(c.amt) : '', amt:c.amt*(c.qty||1)}));
   const sub = lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0);
@@ -1903,8 +1903,9 @@ function billCard(s, editable){
       btn('+ Charge', ()=>open({t:'charge', stay:s.id, kind:'charge'}), 'chip add'),
       btn('+ Discount', ()=>open({t:'charge', stay:s.id, kind:'discount'}), 'chip add'),
       R0.meds ? btn('+ Meds '+money(R0.meds), ()=>{ const m = (s.charges ||= []).find(c => c.label==='Medications given' && c.amt===R0.meds); if(m) m.qty = (m.qty||1) + 1; else s.charges.push({id:uid('c'), label:'Medications given', amt:R0.meds, qty:1}); commit(); }, 'chip add') : null,
-      R0.card ? chip((s.card ? '✓ ' : '')+'Paid by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); }) : null),
-    editable && h('p',{class:'mut', style:'margin:6px 0 0;font-size:13px'}, 'Tap a fee to waive it. Tap a charge or discount to change it.')];
+      R0.card ? chip((s.card ? '✓ ' : '')+'Paid by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); }) : null,
+      chip((s.ownFood ? '✓ ' : '')+'Brought own food', !!s.ownFood, ()=>{ s.ownFood = !s.ownFood; if(!s.ownFood) delete s.ownFood; commit(); })),
+    editable && h('p',{class:'mut', style:'margin:6px 0 0;font-size:13px'}, 'Tap a fee to waive it. Tap a charge or discount to change it. The evening pickup fee covers a meal, so it’s left off when they bring their own food.')];
 }
 
 // add or change one extra charge or discount on a stay
@@ -1946,7 +1947,7 @@ function ratesSection(){
       field('Pets sharing a kennel get off, each, per night', num(R0,'share',{label:'Sharing discount'}))]),
     group('r-fees','Fees', [b.eveFee && 'Evening pickup '+money(b.eveFee), b.fee && 'Other times '+money(b.fee), R0.meds && 'Meds '+money(R0.meds), R0.card && 'Card '+R0.card+'%'].filter(Boolean).join(' · ') || 'None', [
       field('Drop-off or pickup outside your hours', num(b,'fee',{label:'Outside hours fee'})),
-      field('Evening pickup', h('div',{class:'row start wrap'}, num(b,'eveFee',{label:'Evening pickup fee'}), h('span',{class:'mut'},'at or after'),
+      field('Evening pickup (for their evening meal; not charged when they bring food)', h('div',{class:'row start wrap'}, num(b,'eveFee',{label:'Evening pickup fee'}), h('span',{class:'mut'},'at or after'),
         h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
       field('Medications (the + Meds button on a stay)', num(R0,'meds',{label:'Meds charge'})),
       field('Card payments', num(R0,'card',{pre:'', post:'% added', label:'Card fee percent'})),
@@ -2174,7 +2175,8 @@ function reqSheet(u){
     h('div',{class:'sec'},'Pets'),
     h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : p.species==='other' ? (p.kind || 'Other') : 'Dog')+(p.breed ? ', '+p.breed : '')
         +(p.species==='other' ? (p.cage===false ? ' · needs a cage or condo' : ' · bringing a cage') : ''))),
-      r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r))),
+      r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r)),
+      h('div',{class:'mut', style:'margin-top:4px'}, r.own_food ? 'Bringing their own food' : 'Using your food')),
     h('div',{class:'sec'},'Contact'),
     h('div',{class:'card'},
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
@@ -2218,6 +2220,7 @@ function openReqStay(r, cid, groups, made){
 // called by the stay form after it books a stay for a request
 function reqStayBooked(f, sid){
   const r = R.list.find(x => x.id===f.req), made = [...f.made, sid];
+  if(r.own_food){ const st = S.stays.find(x => x.id===sid); if(st){ st.ownFood = true; save(); } }
   if(f.queue.length) return openReqStay(r, f.client, f.queue, made);
   answerReq(r, {status:'approved', stay_id:made.join(','), texted:false});
   open({t:'reqans', id:r.id, act:'approved'});
