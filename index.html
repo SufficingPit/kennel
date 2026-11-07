@@ -1790,7 +1790,11 @@ function siteSheet(u){
       W.cards.map(c => h('div',{class:'card'}, tf(c,'title','Title',sv), tf(c,'text','Text',sv,{area:true}), tf(c,'vax','Vaccines line',sv))),
       help('In longer text, a blank line starts a new paragraph.'),
       tf(W,'vaxNote','Vaccine note under the boxes',sv,{area:true})]),
-    g('prices','Prices', W.prices.map(p => p.label+' '+p.price).join(' · '), [
+    g('prices','Prices', 'From Settings, Rates', [
+      h('p',{class:'mut', style:'margin-top:0'}, 'The website shows the per-night prices and fees from Settings, Rates, the same ones used for bills and the request page’s estimate. Change them there.'),
+      tf(W,'payNote','Payment note',sv,{area:true, ph:'e.g. We take cards through Square.'}),
+      help('The card fee percent in this note is filled in from Rates.')]),
+    false && g('pricesOld','', '', [
       h('div',{class:'lbl mut', style:'font-weight:700;font-size:13px;margin:0 0 8px'},'Per night'),
       colHead(['Name','flex:1'], ['Per','width:78px'], ['Price','width:62px'], ['','width:32px']),
       W.prices.map((p, i) => h('div',{class:'row', style:'margin-bottom:8px;align-items:stretch;gap:6px'}, mini(p,'label','e.g. Dogs',{label:'Name'}), mini(p,'sub','per dog',{label:'Per', style:'width:78px;flex:none;padding:0 8px'}), mini(p,'price','$25',{label:'Price', style:'width:62px;flex:none;padding:0 8px'}),
