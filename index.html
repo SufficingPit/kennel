@@ -2008,8 +2008,7 @@ function notifySection(){
     st==='unsupported' ? h('div',{class:'warn'}, 'This browser can’t get notifications. On an iPhone, add the app to the home screen (Share, Add to Home Screen) and open it from the icon.')
     : st==='blocked' ? h('div',{class:'warn'}, 'Notifications are blocked for this app. Allow them in the phone’s settings, then come back here.')
     : field('On this phone', seg([['on','On'],['off','Off']], st==='on' ? 'on' : 'off', v=>{ v==='on' ? pushOn() : pushOff(); })),
-    PUSH.err && h('p',{class:'err'}, PUSH.err),
-    st==='on' && h('p',{class:'mut', style:'margin:0'}, 'To silence them for a while, use the phone’s Focus or Do Not Disturb.')];
+    PUSH.err && h('p',{class:'err'}, PUSH.err)];
 }
 /* ---------- online booking rules (Settings) ----------
    Kept in the shared settings record, so the public request page and the database's
