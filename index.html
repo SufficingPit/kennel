@@ -2418,6 +2418,10 @@ function reqSheet(u){
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
         h('a',{class:'chip', href:'sms:'+num}, 'Text'), h('a',{class:'chip', href:'tel:'+num}, 'Call'))),
       r.email && h('div',{style:'margin-top:6px'}, h('a',{href:'mailto:'+r.email}, r.email))),
+    fc && !allPhones(fc).some(x => x.slice(-10)===r.phone.replace(/\D/g,'').slice(-10)) && r.phone.replace(/\D/g,'').length >= 10 &&
+      h('div',{class:'card'}, 'Their phone '+fmtPhone(r.phone)+' isn’t on the '+fc.name+' family.',
+        h('div',{class:'mut'}, fc.cell ? 'Saving it keeps '+fc.cell+' as their main phone.' : ''),
+        btn('Save it as their cell', ()=>{ if(fc.cell && !fc.phone) fc.phone = fc.cell; fc.cell = fmtPhone(r.phone); commit(); }, 'lk')),
     (r.status==='pending' || r.status==='approved') && reqFormLine(r, fc),
     reqBringing(r) && [h('div',{class:'sec'},'Bringing'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqBringing(r))],
     reqNote(r) && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqNote(r))],

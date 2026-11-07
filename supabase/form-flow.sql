@@ -5,17 +5,21 @@
 --   - a known family bringing a pet we don't have yet: just that pet's page,
 --   - a family she marked "ask for an updated form" (formUpdate on the family): the form again.
 -- It's never required: they can skip it and bring the paper form at drop-off.
--- "Known" means a family in the app (records, kind client) with the request's phone number;
--- a pet is known if that family has a pet with the same name.
+-- "Known" means a family in the app (records, kind client) with the request's phone number, or,
+-- for someone with a new phone, the same first and last name AND at least one pet with the same
+-- name (a name alone could be a different family). A pet is known if that family has one by that name.
 
 alter table public.guest_forms add column if not exists req_token uuid;     -- the request it was sent from
 alter table public.guest_forms add column if not exists mode text not null default 'new';  -- new | pets | update
 
 -- What a request still needs. Reveals no details, only which of the names they typed are new.
-create or replace function public.form_needs(p_phone text, p_pets jsonb) returns jsonb
+drop function if exists public.form_needs(text, jsonb);
+create or replace function public.form_needs(p_phone text, p_pets jsonb, p_name text) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
   d text := right(regexp_replace(coalesce(p_phone, ''), '\D', '', 'g'), 10);
+  nm text[] := regexp_split_to_array(lower(trim(coalesce(p_name, ''))), '\s+');
+  asked text[] := array(select lower(trim(x->>'name')) from jsonb_array_elements(coalesce(p_pets, '[]')) x);
   c jsonb; have text[]; missing jsonb;
 begin
   if length(d) = 10 then
@@ -24,6 +28,15 @@ begin
        right(regexp_replace(coalesce(r.data->>'cell',  ''), '\D', '', 'g'), 10),
        right(regexp_replace(coalesce(r.data->>'phone', ''), '\D', '', 'g'), 10),
        right(regexp_replace(coalesce(r.data->>'work',  ''), '\D', '', 'g'), 10))
+     order by r.updated_at desc limit 1;
+  end if;
+  -- a new phone: same first and last name, and one of the pets they named
+  if c is null and array_length(nm, 1) >= 2 then
+    select r.data into c from records r
+     where r.kind = 'client' and not r.deleted
+       and lower(trim(coalesce(r.data->>'first', ''))) = nm[1]
+       and lower(trim(coalesce(r.data->>'name',  ''))) = nm[array_length(nm, 1)]
+       and exists (select 1 from jsonb_array_elements(coalesce(r.data->'pets', '[]')) q where lower(trim(q->>'name')) = any(asked))
      order by r.updated_at desc limit 1;
   end if;
   if c is null then
@@ -36,7 +49,7 @@ begin
    where not (lower(trim(x->>'name')) = any(coalesce(have, '{}')));
   return jsonb_build_object('family', true, 'newPets', missing, 'update', coalesce((c->>'formUpdate')::boolean, false));
 end $$;
-revoke execute on function public.form_needs(text, jsonb) from public, anon, authenticated;
+revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
 
 -- The request's status page, now with what it still needs ('form'), while the stay is ahead.
 create or replace function public.request_status(p_token uuid) returns jsonb
@@ -46,7 +59,7 @@ language sql stable security definer set search_path = public as $$
     'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets,
     'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end,
     'form', case when not timed and r.status in ('pending', 'approved') and r.end_date >= public.book_today(b)
-      then public.form_needs(r.phone, r.pets)
+      then public.form_needs(r.phone, r.pets, r.name)
            || jsonb_build_object('sent', exists(select 1 from guest_forms g where g.req_token = r.token and g.status <> 'deleted'),
                                  'name', r.name, 'phone', r.phone, 'email', r.email) end)
   from requests r, (select book_rules() b) x,
