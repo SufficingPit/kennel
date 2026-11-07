@@ -8,6 +8,7 @@
 -- "Known" means a family in the app (records, kind client) with the request's phone number, or,
 -- for someone with a new phone, the same first and last name AND at least one pet with the same
 -- name (a name alone could be a different family). A pet is known if that family has one by that name.
+-- A family found by name with a new phone has changed details, so they're asked to update the form.
 
 alter table public.guest_forms add column if not exists req_token uuid;     -- the request it was sent from
 alter table public.guest_forms add column if not exists mode text not null default 'new';  -- new | pets | update
@@ -20,7 +21,7 @@ declare
   d text := right(regexp_replace(coalesce(p_phone, ''), '\D', '', 'g'), 10);
   nm text[] := regexp_split_to_array(lower(trim(coalesce(p_name, ''))), '\s+');
   asked text[] := array(select lower(trim(x->>'name')) from jsonb_array_elements(coalesce(p_pets, '[]')) x);
-  c jsonb; have text[]; missing jsonb;
+  c jsonb; have text[]; missing jsonb; by_name boolean := false;
 begin
   if length(d) = 10 then
     select r.data into c from records r
@@ -38,6 +39,7 @@ begin
        and lower(trim(coalesce(r.data->>'name',  ''))) = nm[array_length(nm, 1)]
        and exists (select 1 from jsonb_array_elements(coalesce(r.data->'pets', '[]')) q where lower(trim(q->>'name')) = any(asked))
      order by r.updated_at desc limit 1;
+    by_name := c is not null;
   end if;
   if c is null then
     return jsonb_build_object('family', false, 'update', false,
@@ -47,7 +49,8 @@ begin
   select coalesce(jsonb_agg(trim(x->>'name')), '[]'::jsonb) into missing
     from jsonb_array_elements(coalesce(p_pets, '[]')) x
    where not (lower(trim(x->>'name')) = any(coalesce(have, '{}')));
-  return jsonb_build_object('family', true, 'newPets', missing, 'update', coalesce((c->>'formUpdate')::boolean, false));
+  return jsonb_build_object('family', true, 'newPets', missing, 'newPhone', by_name,
+    'update', by_name or coalesce((c->>'formUpdate')::boolean, false));
 end $$;
 revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
 
