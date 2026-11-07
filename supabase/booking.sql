@@ -39,6 +39,8 @@ create index if not exists requests_open on public.requests (status, start_date)
 alter table public.requests add column if not exists client_key uuid unique;
 -- false while the answer still needs texting from her phone (answers made before this read as sent)
 alter table public.requests add column if not exists texted boolean not null default true;
+-- they're bringing their own food (then the evening pickup fee, which covers a meal, doesn't apply)
+alter table public.requests add column if not exists own_food boolean not null default false;
 
 -- Staff (signed in) read and answer requests. Nobody deletes. The public gets nothing
 -- directly, only the functions.
@@ -198,10 +200,11 @@ begin
   if (select count(*) from requests where created_at > now() - interval '1 hour') >= 20 then
     return jsonb_build_object('ok', false, 'reason', 'We’re getting a lot of requests right now. Please call us.'); end if;
 
-  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes, client_key)
+  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes, client_key, own_food)
   values (s, e, p->>'arr', p->>'pick', ds, cs, trim(p->>'name'), trim(p->>'phone'), nullif(trim(coalesce(p->>'email','')),''),
           p->'pets', coalesce((p->>'share')::boolean, true), nullif(trim(coalesce(p->>'notes','')),''),
-          case when coalesce(p->>'key','') ~ '^[0-9a-fA-F-]{36}$' then (p->>'key')::uuid end)
+          case when coalesce(p->>'key','') ~ '^[0-9a-fA-F-]{36}$' then (p->>'key')::uuid end,
+          coalesce((p->>'ownFood')::boolean, false))
   returning token into t;
   return jsonb_build_object('ok', true, 'token', t);
 end $$;
