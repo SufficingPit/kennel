@@ -2375,7 +2375,8 @@ function reqSheet(u){
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
         h('a',{class:'chip', href:'sms:'+num}, 'Text'), h('a',{class:'chip', href:'tel:'+num}, 'Call'))),
       r.email && h('div',{style:'margin-top:6px'}, h('a',{href:'mailto:'+r.email}, r.email))),
-    r.notes && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, r.notes)],
+    reqBringing(r) && [h('div',{class:'sec'},'Bringing'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqBringing(r))],
+    reqNote(r) && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, reqNote(r))],
     r.status==='pending' && [h('div',{class:'sec'},'Family'),
       fieldBtn(fc ? fc.name+' family' : 'New family: '+lastName(r.name), '', pickFam,
         fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : '')],
@@ -2405,9 +2406,12 @@ function approveReq(r, famId){
     : r.share ? ['dog','cat'].map(k => ids.filter(id => kindOf(id)===k)).filter(g => g.length) : ids.map(id => [id]);
   openReqStay(r, c.id, groups, []);
 }
+// the website sends what they're bringing as the note's first line: "Bringing: bed, leash"
+const reqBringing = r => { const m = /^Bringing: (.*)/.exec(r.notes || ''); return m ? m[1].trim() : ''; };
+const reqNote = r => (r.notes || '').replace(/^Bringing: .*(\n\n?)?/, '').trim();
 function openReqStay(r, cid, groups, made){
   const [pets, ...rest] = groups;
-  const f = {id:null, client:cid, pets, start:r.start_date, arr:r.arr, end:r.end_date, pick:r.pick, notes:r.notes||'', belongings:'', req:r.id, queue:rest, made};
+  const f = {id:null, client:cid, pets, start:r.start_date, arr:r.arr, end:r.end_date, pick:r.pick, notes:reqNote(r), belongings:reqBringing(r), req:r.id, queue:rest, made};
   const kind = findPet(pets[0]).p.species==='dog' ? 'dog' : 'cat';
   const taken = new Set(made.map(id => S.stays.find(s=>s.id===id)?.kennel));
   if(pets.every(id => (r._own||[]).includes(id))){ f.kennel = 'own'; open({t:'form', f}); return; }
