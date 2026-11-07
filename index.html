@@ -2596,6 +2596,7 @@ function reqDelSheet(u){
   };
   return sheet('Delete this request?', [
     h('p',{style:'margin-top:0'}, r.name+', '+md(r.start_date)+' – '+md(r.end_date)+'. It comes off the Requests list'+(r.status==='pending' ? ', its spots open up,' : '')+' and their status link stops showing it.'),
+    h('p',{class:'mut'}, 'Just want them to stop seeing it, but keep it here? Use “Hide from website” on the request instead. Their link then says it’s closed.'),
     stays.length > 0 && h('p',{}, 'It booked '+plural(stays.length,'stay')+' on the calendar. Keep '+(stays.length===1 ? 'it' : 'them')+', or delete '+(stays.length===1 ? 'it' : 'them')+' too?')
   ], stays.length
     ? [btn('Cancel', back, 'b2'), btn('Keep stays', ()=>go(false), 'b2'), btn('Delete stays too', ()=>go(true), 'b bd')]

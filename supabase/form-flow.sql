@@ -58,15 +58,16 @@ begin
 end $$;
 revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
 
--- A request can be closed: deleted in the app, hidden by her ("Hide from website"), or its stay is over
--- (the day after pickup). Its page then shows only that it's closed, none of the details.
+-- A deleted request is gone: its link finds nothing. A request is closed when she hides it ("Hide from
+-- website") or its stay is over (the day after pickup): its page shows only that it's closed.
 alter table public.requests add column if not exists hidden boolean not null default false;
 
 -- The request's status page, now with what it still needs ('form'), while the stay is ahead.
 create or replace function public.request_status(p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   -- a request past the auto-decline time reads as declined, with her message
-  select case when r.status = 'deleted' or r.hidden or r.end_date < public.book_today(b) then jsonb_build_object('status', 'closed') else
+  select case when r.status = 'deleted' then null
+    when r.hidden or r.end_date < public.book_today(b) then jsonb_build_object('status', 'closed') else
   jsonb_build_object('status', case when timed then 'declined' else r.status end,
     'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets,
     'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end,
