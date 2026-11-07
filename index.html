@@ -2308,6 +2308,16 @@ function formSheet(u){
   return sheet(gfKind(g), [
     filed && h('div',{class:'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
       fc0 && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>open({t:'client', id:fc0.id})}, 'Open the '+fc0.name+' family ›'))),
+    (rq => rq && h('button',{class:'card row', style:'margin-top:4px', onclick:()=>open({t:'req', id:rq.id})},
+      h('span',{class:'grow'}, h('b',{}, 'Sent with their stay request'), h('div',{class:'mut'}, md(rq.start_date)+' – '+md(rq.end_date)+' · '+rq.pets.map(p => p.name).join(', '))), h('span',{class:'chev'}, '›')))
+      (g.req_token && R.list.find(x => x.token===g.req_token)),
+    !filed && [h('div',{class:'sec', style:'margin-top:4px'}, 'File it on'),
+      fieldBtn(fc ? fc.name+' family' : 'New family: '+(O.last || lastName(g.name)), '', pickFam,
+        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : ''),
+      h('p',{class:'mut', style:'margin-top:6px'}, g.mode==='update' ? 'Replaces the family’s and pets’ details with what they filled in (blank answers keep what you have), adds new pets, and adds their meds to each pet’s care.'
+        : 'Fills in anything still blank on the family and its pets, adds new pets, and adds their meds to each pet’s care.')],
+    h('div',{style:'margin:16px 0 2px'}, seg([['info','Info'],['paper','Paper form']], u.view || 'info', v => { u.view = v; render(); })),
+    (u.view || 'info')==='paper' ? paperView(g) : [
     h('div',{class:'sec'}, 'Owner'),
     h('div',{class:'card'}, h('b',{}, gfName(g)),
       line('Cell', O.cell), line('Main', O.main), line('Work', O.work), line('Email', O.email), line('Lives in', [O.city, O.state, O.zip].filter(Boolean).join(', ')),
@@ -2327,12 +2337,7 @@ function formSheet(u){
       line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)))]),
     h('div',{class:'sec'}, 'Waiver'),
     h('div',{class:'card'}, d.sign ? 'Agreed and signed by '+(d.sign.name || '')+(d.sign.date ? ', '+ymd(d.sign.date) : '') : 'Not signed',
-      d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'})),
-    !filed && [h('div',{class:'sec'}, 'File it on'),
-      fieldBtn(fc ? fc.name+' family' : 'New family: '+(O.last || lastName(g.name)), '', pickFam,
-        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : ''),
-      h('p',{class:'mut', style:'margin-top:6px'}, g.mode==='update' ? 'Replaces the family’s and pets’ details with what they filled in (blank answers keep what you have), adds new pets, and adds their meds to each pet’s care.'
-        : 'Fills in anything still blank on the family and its pets, adds new pets, and adds their meds to each pet’s care.')],
+      d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'}))],
     h('div',{class:'row', style:'margin:22px 0 8px'}, btn('Print', ()=>printForm(g), 'b2 sm'),
       btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. Anything already filled in on the family stays. This can’t be undone.', 'Delete', ()=>{
         saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad'))
@@ -2371,16 +2376,29 @@ function fileForm(g, famId){
   U.sh = {t:'client', id:c.id}; commit();
 }
 // prints the form as the paper form, drawn by the website's own guest-paper.js
-let paperJs = null;
+let paperJs = null, paperCss = false;
+const loadPaper = () => {
+  paperJs ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = SITE_URL+'guest-paper.js'; sc.onload = ok; sc.onerror = () => { paperJs = null; no(); }; document.head.append(sc); });
+  return paperJs.then(() => { if(!paperCss){ paperCss = true; document.head.append(h('link',{rel:'stylesheet', href:GUEST_FONTS}), h('style',{}, guestPaperCSS)); } });
+};
+const paperData = g => ({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)});
+// the form as they'd see it on paper, inside the sheet (read only)
+function paperView(g){
+  const box = h('div',{class:'gpview', style:'margin:10px -4px 0'}, h('p',{class:'mut'}, 'Loading the paper form…'));
+  loadPaper().then(async () => {
+    const pages = h('div',{}); pages.innerHTML = guestPaper(paperData(g), SITE_URL, {lineart:true, petsOnly:g.mode==='pets'});
+    box.replaceChildren(pages);
+    const fit = () => { if(!box.isConnected || !box.clientWidth) return; pages.style.zoom = box.clientWidth / (8.5*96 + 4); if(window.guestPaperFit) guestPaperFit(pages); };
+    requestAnimationFrame(fit); await document.fonts.ready.catch(() => {}); fit();
+  }).catch(() => box.replaceChildren(h('p',{class:'mut'}, 'Couldn’t load the paper form. Check the connection.')));
+  return box;
+}
 async function printForm(g){
-  try {
-    paperJs ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = SITE_URL+'guest-paper.js'; sc.onload = ok; sc.onerror = () => { paperJs = null; no(); }; document.head.append(sc); });
-    await paperJs;
-  } catch(e){ toast('Couldn’t load the form. Check the connection.'); return; }
+  try { await loadPaper(); } catch(e){ toast('Couldn’t load the form. Check the connection.'); return; }
   const css = h('style',{}, guestPaperCSS+'@media print{#app{display:none!important}#print{display:block!important}}'), font = h('link',{rel:'stylesheet', href:GUEST_FONTS});
   document.head.append(font, css);
   const el = document.getElementById('print');
-  el.innerHTML = guestPaper({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)}, SITE_URL, {lineart:true});
+  el.innerHTML = guestPaper(paperData(g), SITE_URL, {lineart:true, petsOnly:g.mode==='pets'});
   await document.fonts.ready.catch(() => {});
   // measured while shown off to the side: the print area is hidden on screen
   el.style.cssText = 'display:block;position:absolute;left:-10000px;top:0'; if(window.guestPaperFit) guestPaperFit(el); el.style.cssText = '';
@@ -2464,7 +2482,7 @@ function approveReq(r, famId){
 }
 // Guest form for a request: sent from its page, or what the website is asking them for.
 function reqFormLine(r, fc){
-  const g = G.list.find(x => x.req_token===r.token);
+  const g = r.token && G.list.find(x => x.req_token===r.token);
   if(g) return [h('div',{class:'sec'},'Guest form'), h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
     h('span',{class:'grow'}, h('b',{}, gfKind(g)), h('div',{class:'mut'}, (g.status==='filed' ? 'Filed' : 'Sent '+ago(g.created_at))+' · '+(g.pets || ''))), h('span',{class:'chev'}, '›'))];
   // the same rules the website uses (form_needs): on file = same phone, or same name and one pet, and a signed waiver
