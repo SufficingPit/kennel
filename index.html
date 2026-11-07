@@ -2235,8 +2235,14 @@ function reqCard(r){
     h('div',{}, md(r.start_date)+' – '+md(r.end_date)+' · '+plural(n,'night')+' · '+reqPetsText(r)),
     h('div',{class:'mut'}, r.status==='pending' ? 'Sent '+ago(r.created_at) : r.status==='cancelled' ? 'Cancelled by them' : 'Answered '+ago(r.answered_at)));
 }
+// Request and guest form notifications stay on the phone until tapped or swiped. Clear them once
+// she's looked at the Requests tab, and whenever nothing is waiting any more.
+function clearNotes(){
+  try { navigator.serviceWorker?.getRegistration().then(r => r && r.getNotifications().then(ns => ns.forEach(n => n.close()))).catch(() => {}); } catch(e) {}
+}
 function reqsView(){
   if(!R.loaded) loadRequests().then(quietRender);
+  else if(document.visibilityState==='visible') clearNotes();
   const wait = reqWaiting().sort((a,b) => a.start_date < b.start_date ? -1 : 1);
   const done = R.list.filter(r => !wait.includes(r) && Date.parse(r.answered_at || r.created_at) > Date.now() - 30*864e5);
   return [h('div',{class:'top hdr'}, h('h1',{},'Requests')),
@@ -3031,7 +3037,8 @@ document.addEventListener('focusin', e => { if(isTextField(e.target)) document.b
 document.addEventListener('focusout', () => setTimeout(() => { if(!isTextField(document.activeElement)){ document.body.classList.remove('typing'); if(renderLater){ renderLater = false; render(); } } }, 50));
 // works offline once loaded (home-screen app)
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !U.sh && !U.pk) render(); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !U.sh && !U.pk) render();
+  if(!document.hidden && R.loaded && G.loaded && !reqWaiting().length && !gNew().length) clearNotes(); });
 </script>
 </body>
 </html>
