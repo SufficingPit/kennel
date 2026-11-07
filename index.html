@@ -2146,7 +2146,7 @@ const ago = iso => { const m = Math.round((Date.now() - Date.parse(iso))/60000);
   return m < 1 ? 'just now' : m < 60 ? plural(m,'minute')+' ago' : m < 60*24 ? plural(Math.round(m/60),'hour')+' ago' : plural(Math.round(m/1440),'day')+' ago'; };
 
 async function loadRequests(){
-  if(DEMO){ R = {list:S.reqs || [], loaded:true, err:''}; return; }
+  if(DEMO){ R = {list:(S.reqs || []).filter(r => r.status!=='deleted'), loaded:true, err:''}; return; }
   if(!synced() || Y.session.dead) return;
   const since = new Date(Date.now() - 90*864e5).toISOString();
   try {
@@ -2156,8 +2156,8 @@ async function loadRequests(){
     list.forEach(r => { if(Y.reqq && Y.reqq[r.id]) Object.assign(r, Y.reqq[r.id]); });
     if(!DEMO) list.filter(reqTimedOut).forEach(r => answerReq(r, {status:'declined', reply:S.book.autoMsg || AUTO_MSG}));
     const before = JSON.stringify(R.list);
-    R = {list, loaded:true, err:''};
-    if(JSON.stringify(list) !== before) quietRender();
+    R = {list:list.filter(r => r.status!=='deleted'), loaded:true, err:''};
+    if(JSON.stringify(R.list) !== before) quietRender();
   } catch(e){ R.err = 'Couldn’t load requests.'; }
 }
 async function flushAnswers(){
@@ -2241,7 +2241,8 @@ function reqSheet(u){
     r.notes && [h('div',{class:'sec'},'Their note'), h('div',{class:'card', style:'white-space:pre-wrap'}, r.notes)],
     r.status==='pending' && [h('div',{class:'sec'},'Family'),
       fieldBtn(fc ? fc.name+' family' : 'New family: '+lastName(r.name), '', pickFam,
-        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : '')]
+        fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : '')],
+    h('div',{style:'margin:24px 0 8px'}, btn('Delete this request', ()=>open({t:'reqdel', id:r.id}), 'lk bad'))
   ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>approveReq(r, u.fam))] : btn('Done', close));
 }
 
@@ -2335,6 +2336,23 @@ function textCard(r){
       isPhone && h('a',{class:'b sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:smsLink(r, body), onclick:()=>setTimeout(sent, 300)}, 'Text'),
       !isPhone && copyBtn(body, 'Copy'),
       btn('Mark sent', sent, 'b2 sm')));
+}
+
+// Delete a request: it's marked deleted and hidden (never erased). Stays it booked can go too.
+function reqDelSheet(u){
+  const r = R.list.find(x => x.id===u.id); if(!r) return null;
+  const stays = reqStays(r), back = () => open({t:'req', id:r.id});
+  const go = alsoStays => {
+    if(alsoStays){ S.stays = S.stays.filter(s => !stays.includes(s.id)); for(const k in S.log) if(stays.some(id => k.startsWith(id+'|'))) delete S.log[k]; save(); }
+    answerReq(r, {status:'deleted', texted:true}, true);
+    R.list = R.list.filter(x => x!==r); U.tab = 'reqs'; U.sh = null; commit();
+  };
+  return sheet('Delete this request?', [
+    h('p',{style:'margin-top:0'}, r.name+', '+md(r.start_date)+' – '+md(r.end_date)+'. It comes off the Requests list'+(r.status==='pending' ? ', its spots open up,' : '')+' and their status link stops showing it.'),
+    stays.length > 0 && h('p',{}, 'It booked '+plural(stays.length,'stay')+' on the calendar. Keep '+(stays.length===1 ? 'it' : 'them')+', or delete '+(stays.length===1 ? 'it' : 'them')+' too?')
+  ], stays.length
+    ? [btn('Cancel', back, 'b2'), btn('Keep stays', ()=>go(false), 'b2'), btn('Delete stays too', ()=>go(true), 'b bd')]
+    : [btn('Cancel', back, 'b2'), btn('Delete', ()=>go(false), 'b bd')], back);
 }
 
 // demo: a couple of made-up requests (fake names and 555-01xx numbers)
@@ -2704,7 +2722,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
 }
 
 const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
