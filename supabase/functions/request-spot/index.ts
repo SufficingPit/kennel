@@ -28,12 +28,13 @@ Deno.serve(async (req) => {
   const secret = Deno.env.get("TURNSTILE_SECRET");
   if (!secret) return reply({ ok: false, reason: "Online requests aren’t set up yet. Please call us." }, 503);
   const form = new FormData();
-  form.append("secret", secret);
+  form.append("secret", secret.trim());
   form.append("response", String(body.token ?? ""));
   const ip = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (ip) form.append("remoteip", ip);
   const check = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form })
     .then((r) => r.json()).catch(() => ({ success: false }));
+  if (!check.success) console.log("turnstile failed", JSON.stringify(check["error-codes"]), check.hostname || "");
   if (!check.success) return reply({ ok: false, reason: "The human check didn’t go through. Please try it again.", retry: true }, 400);
 
   const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
