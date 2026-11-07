@@ -2213,7 +2213,7 @@ function answerReq(r, fields, keepTime){
   Object.assign(r, fields, keepTime ? {} : {answered_at:new Date().toISOString()});
   if(DEMO){ saveLocal(); return; }
   const {status, reply, answered_at, stay_id, texted} = r;
-  (Y.reqq ||= {})[r.id] = {status, reply, answered_at, stay_id, texted:texted!==false, answered_by:Y.session.user};
+  (Y.reqq ||= {})[r.id] = {status, reply, answered_at, stay_id, texted:texted!==false, answered_by:Y.session.user, hidden:!!r.hidden};
   saveSync(); flushAnswers().catch(() => {});
 }
 
@@ -2452,6 +2452,10 @@ function reqSheet(u){
     r.status==='pending' && [h('div',{class:'sec'},'Family'),
       fieldBtn(fc ? fc.name+' family' : 'New family: '+lastName(r.name), '', pickFam,
         fc ? (u.how==='phone' ? 'same phone' : u.how==='name' ? 'same name, check it' : '') : '')],
+    h('div',{class:'sec'},'Their request page'),
+    h('div',{class:'card'}, r.hidden ? 'Hidden. Their link shows “This request is closed” instead of the details.'
+        : 'They can see this request, your answer and your note at their link until the day after pickup. Then it closes on its own.',
+      btn(r.hidden ? 'Show it again' : 'Hide from website', ()=>{ answerReq(r, {hidden:!r.hidden}, true); render(); }, 'lk')),
     h('div',{style:'margin:24px 0 8px'}, btn('Delete this request', ()=>open({t:'reqdel', id:r.id}), 'lk bad'))
   ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>approveReq(r, u.fam))] : btn('Done', close));
 }

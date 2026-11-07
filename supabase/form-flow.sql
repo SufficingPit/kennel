@@ -58,18 +58,23 @@ begin
 end $$;
 revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
 
+-- A request can be closed: deleted in the app, hidden by her ("Hide from website"), or its stay is over
+-- (the day after pickup). Its page then shows only that it's closed, none of the details.
+alter table public.requests add column if not exists hidden boolean not null default false;
+
 -- The request's status page, now with what it still needs ('form'), while the stay is ahead.
 create or replace function public.request_status(p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   -- a request past the auto-decline time reads as declined, with her message
-  select jsonb_build_object('status', case when timed then 'declined' else r.status end,
+  select case when r.status = 'deleted' or r.hidden or r.end_date < public.book_today(b) then jsonb_build_object('status', 'closed') else
+  jsonb_build_object('status', case when timed then 'declined' else r.status end,
     'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets,
     'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end,
     'form', case when not timed and r.status in ('pending', 'approved') and r.end_date >= public.book_today(b)
       then public.form_needs(r.phone, r.pets, r.name)
            || jsonb_build_object('sent', exists(select 1 from guest_forms g where g.status <> 'deleted' and (g.req_token = r.token
                    or (g.status = 'new' and right(regexp_replace(g.phone, '\D', '', 'g'), 10) = right(regexp_replace(r.phone, '\D', '', 'g'), 10)))),
-                                 'name', r.name, 'phone', r.phone, 'email', r.email) end)
+                                 'name', r.name, 'phone', r.phone, 'email', r.email) end) end
   from requests r, (select book_rules() b) x,
     lateral (select r.status='pending' and coalesce((b->>'auto')::int, 0) > 0
                     and r.created_at <= now() - make_interval(hours => (b->>'auto')::int) as timed) t
