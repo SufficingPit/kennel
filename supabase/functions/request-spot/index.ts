@@ -6,7 +6,7 @@
 // 3. Sends a notification to every phone that turned them on (push_subs), if the secret
 //    VAPID_PRIVATE is set. A failed notification never fails the request.
 import webpush from "npm:web-push@3.6.7";
-const VAPID_PUB = "BKNmU1sCKKgy7frDj1nDGQ-SRB4sJyzhYVorYn5M2fIXWzZwo0ezQp8P1jTgROCf9d-Na-1hBXiHUe7PmwWu8uY";
+const VAPID_PUB = "BArT00BpVojpgIlfimBgeOb_LqGiLpie5j8F_NeQkz5EWhFu6FNfpNqBSvArQL_DGdDw47XIwOSU_sU18q4F-cQ";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

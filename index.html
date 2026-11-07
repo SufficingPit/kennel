@@ -1969,7 +1969,7 @@ function ratesSection(){
    The phone subscribes with the browser's push service; the subscription is saved in
    push_subs, and the request-spot server function notifies every saved phone. On iPhone
    this works only in the app opened from the home screen icon. */
-const VAPID_PUB = 'BKNmU1sCKKgy7frDj1nDGQ-SRB4sJyzhYVorYn5M2fIXWzZwo0ezQp8P1jTgROCf9d-Na-1hBXiHUe7PmwWu8uY';
+const VAPID_PUB = 'BArT00BpVojpgIlfimBgeOb_LqGiLpie5j8F_NeQkz5EWhFu6FNfpNqBSvArQL_DGdDw47XIwOSU_sU18q4F-cQ';
 const pushOK = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const b64ToBytes = s => { const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
 let PUSH = {state:'?', err:''};   // on, off, blocked, unsupported
