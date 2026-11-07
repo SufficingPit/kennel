@@ -9,6 +9,10 @@
 -- for someone with a new phone, the same first and last name AND at least one pet with the same
 -- name (a name alone could be a different family). A pet is known if that family has one by that name.
 -- A family found by name with a new phone has changed details, so they're asked to update the form.
+-- A family only counts as having a form on file once its waiver is signed (signed date set: a filed
+-- form sets it, and so does she for a paper form). Approving a first request makes a bare family
+-- from the request, which still needs the whole form.
+-- A form sent from the same phone that she hasn't filed yet counts as received ('sent').
 
 alter table public.guest_forms add column if not exists req_token uuid;     -- the request it was sent from
 alter table public.guest_forms add column if not exists mode text not null default 'new';  -- new | pets | update
@@ -41,7 +45,7 @@ begin
      order by r.updated_at desc limit 1;
     by_name := c is not null;
   end if;
-  if c is null then
+  if c is null or coalesce(c->>'signed', '') = '' then
     return jsonb_build_object('family', false, 'update', false,
       'newPets', coalesce((select jsonb_agg(trim(x->>'name')) from jsonb_array_elements(coalesce(p_pets, '[]')) x), '[]'::jsonb));
   end if;
@@ -63,7 +67,8 @@ language sql stable security definer set search_path = public as $$
     'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end,
     'form', case when not timed and r.status in ('pending', 'approved') and r.end_date >= public.book_today(b)
       then public.form_needs(r.phone, r.pets, r.name)
-           || jsonb_build_object('sent', exists(select 1 from guest_forms g where g.req_token = r.token and g.status <> 'deleted'),
+           || jsonb_build_object('sent', exists(select 1 from guest_forms g where g.status <> 'deleted' and (g.req_token = r.token
+                   or (g.status = 'new' and right(regexp_replace(g.phone, '\D', '', 'g'), 10) = right(regexp_replace(r.phone, '\D', '', 'g'), 10)))),
                                  'name', r.name, 'phone', r.phone, 'email', r.email) end)
   from requests r, (select book_rules() b) x,
     lateral (select r.status='pending' and coalesce((b->>'auto')::int, 0) > 0

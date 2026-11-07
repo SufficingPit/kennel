@@ -2461,10 +2461,14 @@ function reqFormLine(r, fc){
   const g = G.list.find(x => x.req_token===r.token);
   if(g) return [h('div',{class:'sec'},'Guest form'), h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
     h('span',{class:'grow'}, h('b',{}, gfKind(g)), h('div',{class:'mut'}, (g.status==='filed' ? 'Filed' : 'Sent '+ago(g.created_at))+' · '+(g.pets || ''))), h('span',{class:'chev'}, '›'))];
+  // the same rules the website uses (form_needs): on file = same phone, or same name and one pet, and a signed waiver
   const known = fc ? fc.pets.map(p => p.name.trim().toLowerCase()) : [];
   const newPets = r.pets.map(p => p.name.trim()).filter(nm => !known.includes(nm.toLowerCase()));
   const newPhone = fc && !allPhones(fc).some(x => x.slice(-10)===r.phone.replace(/\D/g,'').slice(-10));
-  const want = !fc ? 'The website asked them for a new guest form.' : fc.formUpdate ? 'The website asked them to update their guest form.'
+  const onFile = fc && fc.signed && (!newPhone || newPets.length < r.pets.length);
+  const sentByPhone = G.list.some(x => x.status==='new' && (x.phone || '').replace(/\D/g,'').slice(-10)===r.phone.replace(/\D/g,'').slice(-10));
+  if(sentByPhone) return [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, 'They sent a guest form from this phone. It’s waiting under New guest forms.')];
+  const want = !onFile ? 'The website asked them for a new guest form.' : fc.formUpdate ? 'The website asked them to update their guest form.'
     : newPhone ? 'Their phone is new, so the website asked them to update their guest form.'
     : newPets.length ? 'The website asked them for a page for '+petList(newPets)+'.' : '';
   return want && [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, want, h('div',{class:'mut'}, 'Not sent yet. They may bring it on paper instead.'))];
