@@ -1550,12 +1550,15 @@ function familyForms(c){
     cur.length ? cur.map(g => formRow(g))
       : h('p',{class:'mut', style:'margin:4px 0 8px'}, 'No guest form on file. When they fill one out online it shows here. If they did it on paper, add a scan of the signed waiver.'),
     waiver ? (waiver.w ? waiverRow(c, waiver.w, 'Signed waiver')
-        : h('div',{class:'mut', style:'margin:2px 0 8px'}, 'Waiver signed online on their guest form, '+ymd(waiver.date)+'.'))
+        : h('button',{class:'lk', style:'display:block;padding:0;min-height:36px;text-align:left', onclick:()=>open({t:'gform', id:waiver.g.id})}, 'Waiver signed online, '+ymd(waiver.date)+' ›'))
       : h('div',{class:'mut', style:'margin:2px 0 8px'}, 'No signed waiver yet.'),
     up && !up.err ? h('p',{class:'mut'}, 'Uploading…')
       : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned waiver',
           h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addWaivers(c, [...e.target.files])})),
     up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err),
+    h('div',{class:'row wrap start', style:'margin-top:8px'},
+      (t => t && h('a',{class:'chip', href:t}, cur.length ? 'Text a link to update it' : 'Text them the form link'))(formText(c, cur.length > 0)),
+      btn(livePets(c).length || c.cell || c.phone ? 'Print it with their info' : 'Print a blank form', ()=>printPaper(familyPaper(c), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')),
     older.length > 0 && [h('button',{class:'lk', style:'display:block;padding:0;min-height:40px;margin-top:6px', 'aria-expanded':showOld, onclick:()=>{ U.oldf = showOld ? null : c.id; render(); }},
         (showOld ? 'Hide older forms' : 'Older forms ('+older.length+')')),
       showOld && [h('p',{class:'mut', style:'margin:0 0 6px;font-size:13px'}, 'Kept for the record. A newer form or scan moves the old one here on its own.'),
@@ -1657,8 +1660,9 @@ function clientSheet(u){
       c.archived
         ? h('div',{style:'margin:24px 0 8px'},
             btn('Bring back the '+c.name+' family', ()=>{ delete c.archived; commit(); }, 'b2'),
-            h('div',{style:'margin-top:14px'}, btn('Delete for good', ()=>confirmSheet('Delete the '+c.name+' family for good?', 'Erases them, their '+plural(c.pets.length,'pet')+' and all '+plural(stays.length,'stay')+', past ones too. This can’t be undone.', 'Delete for good', ()=>{
+            h('div',{style:'margin-top:14px'}, btn('Delete for good', ()=>confirmSheet('Delete the '+c.name+' family for good?', 'Erases them, their '+plural(c.pets.length,'pet')+' and all '+plural(stays.length,'stay')+', past ones too'+(famForms(c).length || c.waivers ? ', and their guest forms and waivers' : '')+'. This can’t be undone.', 'Delete for good', ()=>{
               const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
+              famForms(c).forEach(g => saveForm(g, {status:'deleted'})); G.list = G.list.filter(g => g.status!=='deleted');
             }, u), 'lk bad')))
         : h('div',{style:'margin:24px 0 8px'}, btn('Archive family', ()=>{ const up = upcomingStays(c.id);
             confirmSheet('Archive the '+c.name+' family?', 'They’re hidden from your family list. Their past stays and details are kept, and they come back if they book again.'+(up.length ? ' Their '+plural(up.length,'upcoming stay')+' will be deleted.' : ''), 'Archive', ()=>{
@@ -2450,6 +2454,51 @@ function formCard(g){
 }
 const yesNoText = v => v==='yes' ? 'Yes' : v==='no' ? 'No' : '';
 const dobText = v => /^\d{4}-\d\d-\d\d$/.test(v||'') ? ymd(v)+' ('+ageOf(v)+')' : v || '';
+// the paper form filled in with what's on file, for a family that would rather do it on paper (they check it and sign)
+function familyPaper(c){
+  const owner = {}; FAM_FIELDS.forEach(([k, , fk]) => { if(c[k]) owner[fk] = c[k]; });
+  const pets = livePets(c).map(p => { const o = {name:p.name, species:p.species};
+    if(p.species==='other' && p.other) o.other = p.other;
+    PET_FIELDS.forEach(([k]) => { const v = p[k]; if(Array.isArray(v) ? v.length : v) o[k] = Array.isArray(v) ? [...v] : v; });
+    o.meds = p.plan.filter(x => x.tag==='meds' && x.note).slice(0, 4).map(x => { const [name, dose, freq, ...rest] = x.note.split(', ');
+      return {name, dose:dose || '', freq:freq || '', instr:rest.join(', ')}; });
+    return o; });
+  return {owner, pets};
+}
+// a text to them with the link to the online form (her phone's Messages app opens with it written)
+function formText(c, update){
+  const ph = (c.cell || c.phone || '').replace(/[^\d+]/g, ''); if(!ph) return null;
+  const pets = petList(livePets(c).map(p => p.name));
+  const body = 'Hi'+(c.first ? ' '+c.first : '')+', here’s our guest form'+(pets ? ' for '+pets : '')+(update ? ' to look over and send again' : '')+': '
+    + SITE_URL+'guest-form.html'+(update ? '?update' : '')+' Thanks! Little Village Pet Lodge';
+  return 'sms:'+ph+'?&body='+encodeURIComponent(body);
+}
+// a filed form on the wrong family: file it on the right one
+function moveForm(g, toId){
+  const from = client(g.client_id), sd = signDate(g);
+  fileForm(g, toId);
+  if(!from || from.id===g.client_id) return;
+  unSigned(from, sd);
+  const ids = new Set(from.pets.map(p => p.id));
+  const empty = !from.archived && !famForms(from).length && !(from.waivers || []).length && !S.stays.some(x => x.pets.some(i => ids.has(i)));
+  if(empty) from.archived = today();
+  commit();
+  toast(empty ? 'Moved. The '+from.name+' family had nothing else, so it’s archived.' : 'Moved. Check the '+from.name+' family for anything it filled in there.');
+}
+function moveFormPick(g){
+  const from = client(g.client_id), O = g.data?.owner || {};
+  const ask = (id, label) => {
+    const ids = from ? new Set(from.pets.map(p => p.id)) : new Set();
+    const empty = from && famForms(from).length===1 && !(from.waivers || []).length && !S.stays.some(x => x.pets.some(i => ids.has(i)));
+    confirmSheet('Move it to '+label+'?', 'Files it there like a new form: fills in the family and pets from it.'
+      + (from ? (empty ? ' The '+from.name+' family has nothing else on it, so it gets archived (you can bring it back).' : ' What it already filled in on the '+from.name+' family stays there, so check that family.') : ''),
+      'Move', () => moveForm(g, id), {t:'gform', id:g.id});
+  };
+  pickList({title:'Move to which family?', search:'Search family, pet or phone', focus:true,
+    items: q => S.clients.filter(c => c.id!==g.client_id && (!c.archived || q) && matchClient(c, q)).sort(byName).map(c => ({id:c.id, label:c.name+' family'+(c.archived ? ' (archived)' : ''), sub:clientLine(c)})),
+    onPick: id => ask(id, 'the '+client(id).name+' family'),
+    action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => ask('new', 'a new '+(O.last || lastName(g.name))+' family')}});
+}
 function formSheet(u){
   const g = G.list.find(x => x.id===u.id); if(!g) return null;
   const d = g.data || {}, O = d.owner || {}, arch = g.status==='archived', filed = g.status==='filed' || arch, fc0 = filed && client(g.client_id);
@@ -2467,6 +2516,7 @@ function formSheet(u){
   return sheet(gfKind(g), [
     filed && h('div',{class:arch ? 'warn' : 'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
       h('div',{}, arch ? 'Archived: kept for the record, but not compared with the family.' : isCur ? 'This is their current form.' : 'A newer form replaced this one. It’s kept under Older forms.'),
+      !arch && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>moveFormPick(g)}, 'Wrong family? Move it')),
       fc0 && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>open({t:'client', id:fc0.id})}, 'Open the '+fc0.name+' family ›'))),
     (rq => rq && h('button',{class:'card row', style:'margin-top:4px', onclick:()=>open({t:'req', id:rq.id})},
       h('span',{class:'grow'}, h('b',{}, 'Sent with their stay request'), h('div',{class:'mut'}, md(rq.start_date)+' – '+md(rq.end_date)+' · '+rq.pets.map(p => p.name).join(', '))), h('span',{class:'chev'}, '›')))
@@ -2558,17 +2608,18 @@ function paperView(g){
   }).catch(() => box.replaceChildren(h('p',{class:'mut'}, 'Couldn’t load the paper form. Check the connection.')));
   return box;
 }
-async function printForm(g){
+const printForm = g => printPaper(paperData(g), {petsOnly:g.mode==='pets'}, 'Guest form '+gfName(g));
+async function printPaper(data, opts, title){
   try { await loadPaper(); } catch(e){ toast('Couldn’t load the form. Check the connection.'); return; }
   const css = h('style',{}, guestPaperCSS+'@media print{#app{display:none!important}#print{display:block!important}}'), font = h('link',{rel:'stylesheet', href:GUEST_FONTS});
   document.head.append(font, css);
   const el = document.getElementById('print');
-  el.innerHTML = guestPaper(paperData(g), SITE_URL, {lineart:true, petsOnly:g.mode==='pets'});
+  el.innerHTML = guestPaper(data, SITE_URL, {lineart:true, ...opts});
   await document.fonts.ready.catch(() => {});
   // measured while shown off to the side: the print area is hidden on screen
   el.style.cssText = 'display:block;position:absolute;left:-10000px;top:0'; if(window.guestPaperFit) guestPaperFit(el); el.style.cssText = '';
   await Promise.all([...el.querySelectorAll('img')].map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
-  const old = document.title; document.title = ('Guest form '+gfName(g)).replace(/[^\w &-]/g,'');
+  const old = document.title; document.title = title.replace(/[^\w &-]/g,'');
   window.print();
   document.title = old; css.remove(); font.remove(); el.replaceChildren();
 }
@@ -2653,7 +2704,7 @@ function approveReq(r, famId){
 function reqFormLine(r, fc){
   const g = r.token && G.list.find(x => x.req_token===r.token);
   if(g) return [h('div',{class:'sec'},'Guest form'), h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
-    h('span',{class:'grow'}, h('b',{}, gfKind(g)), h('div',{class:'mut'}, (g.status==='filed' ? 'Filed' : 'Sent '+ago(g.created_at))+' · '+(g.pets || ''))), h('span',{class:'chev'}, '›'))];
+    h('span',{class:'grow'}, h('b',{}, gfKind(g)), h('div',{class:'mut'}, (g.status==='filed' || g.status==='archived' ? 'Filed' : 'Sent '+ago(g.created_at))+' · '+(g.pets || ''))), h('span',{class:'chev'}, '›'))];
   // the same rules the website uses (form_needs): on file = same phone, or same name and one pet, and a signed waiver
   const known = fc ? fc.pets.map(p => p.name.trim().toLowerCase()) : [];
   const newPets = r.pets.map(p => p.name.trim()).filter(nm => !known.includes(nm.toLowerCase()));
