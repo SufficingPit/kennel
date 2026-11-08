@@ -1350,6 +1350,16 @@ function petFacts(p){
   ].filter(Boolean);
   return facts.length ? h('div',{class:'card', style:'font-size:14px'}, facts) : null;
 }
+// What they brought, to tick off as it goes back home (s.packed holds the ticked items)
+const belongItems = s => (s.belongings||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
+function goingHome(s){
+  const items = belongItems(s); if(!items.length) return null;
+  const packed = new Set((s.packed||[]).filter(x => items.includes(x)));
+  const toggle = it => { packed.has(it) ? packed.delete(it) : packed.add(it); s.packed = [...packed]; if(!s.packed.length) delete s.packed; commit(); };
+  return [h('div',{class:'sec'}, 'Going home', h('span',{class:'mut', style:'font-weight:600;text-transform:none;letter-spacing:0'}, packed.size+' of '+items.length+' packed')),
+    h('div',{class:'card', style:'padding:4px 14px'}, items.map(it => h('button',{class:'chk-row', style:'width:100%;border:0;background:none;text-align:left;font:inherit;color:inherit;padding:0', 'aria-pressed':packed.has(it), onclick:()=>toggle(it)},
+      h('span',{class:'chk'+(packed.has(it)?' on':''), style:'width:28px;height:28px;border-radius:8px;font-size:15px'}, packed.has(it) && check()), h('span',{style:packed.has(it)?'text-decoration:line-through;color:var(--mut)':''}, it))))];
+}
 function stayDetail(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
   const c = stayClient(s), pets = s.pets.map(i=>findPet(i)?.p).filter(Boolean);
@@ -1365,9 +1375,9 @@ function stayDetail(u){
       h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
       h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
       c && h('button',{class:'lk', style:'padding:0;margin-top:4px', onclick:()=>open({t:'client',id:c.id})}, c.name+' family'+(bestPhone(c)?' · '+bestPhone(c):'')+' ›'),
-      s.belongings && h('div',{style:'margin-top:4px'}, h('b',{},'Brought: '), s.belongings),
       s.notes && h('div',{style:'margin-top:6px'}, s.notes)),
     warns,
+    goingHome(s),
     h('div',{class:'row wrap start'},
       btn(s.paid ? '✓ Paid' : 'Mark paid', ()=>set('paid',!s.paid), 'chip'+(s.paid?' on':'')),
       btn('Owner report', ()=>open({t:'report', id:s.id}), 'chip'),
@@ -1607,6 +1617,7 @@ function petSheet(u){
 }
 
 /* ============================== CARE TYPES ============================== */
+const CORE_TAGS = ['feed', 'potty', 'meds'];   // built-in types of care
 function tagSheet(u){
   const orig = S.tags.find(x=>x.id===u.id);
   const t = u.draft || (u.draft = orig ? {...orig} : {id:uid('g'), name:'', color:COLORS[(S.tags.length)%COLORS.length]});
@@ -1618,9 +1629,11 @@ function tagSheet(u){
       // any other color: our own picker
       h('button',{class:'custom'+(COLORS.includes(t.color)?'':' on'), 'aria-label':'Pick a custom color', style:COLORS.includes(t.color)?'':'background:'+t.color+';border-style:solid',
         onclick:()=>pickColor(t.color, c=>{ t.color=c; })}, COLORS.includes(t.color) ? '+' : ''))),
-    orig && h('div',{class:'row start', style:'margin:20px 0 8px'},
-      btn(orig.arch?'Restore':'Archive', ()=>{ orig.arch=!orig.arch; U.sh=null; commit(); }, 'lk'),
-      btn('Delete', ()=>open({t:'deltag', id:orig.id}), 'lk bad'))
+    orig && (CORE_TAGS.includes(orig.id)
+      ? h('p',{class:'mut', style:'margin-top:16px'}, 'Feed, Potty and Meds are built in, so they can’t be deleted. You can rename them or change the color.')
+      : h('div',{class:'row start', style:'margin:20px 0 8px'},
+          btn(orig.arch?'Restore':'Archive', ()=>{ orig.arch=!orig.arch; U.sh=null; commit(); }, 'lk'),
+          btn('Delete', ()=>open({t:'deltag', id:orig.id}), 'lk bad')))
   ], [u.err && h('div',{class:'err'}, u.err), btn('Cancel', cancel, 'b2'),
     btn('Save', ()=>{ if(!t.name.trim()){ u.err='Give it a name.'; render(); return; } t.name=t.name.trim(); orig ? Object.assign(orig,t) : S.tags.push(t); save(); cancel(); })], cancel);
 }
