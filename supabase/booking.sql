@@ -44,6 +44,7 @@ alter table public.requests add column if not exists client_key uuid unique;
 alter table public.requests add column if not exists texted boolean not null default true;
 -- they're bringing their own food (then the evening pickup fee, which covers a meal, doesn't apply)
 alter table public.requests add column if not exists own_food boolean not null default false;
+alter table public.requests add column if not exists bringing text;   -- what they're bringing for this stay (becomes the stay's belongings)
 
 -- Staff (signed in) read and answer requests. Nobody deletes. The public gets nothing
 -- directly, only the functions.
@@ -176,7 +177,7 @@ begin
   if length(trim(coalesce(p->>'name',''))) not between 2 and 80 then return jsonb_build_object('ok', false, 'reason', 'Enter your name.'); end if;
   digits := regexp_replace(coalesce(p->>'phone',''), '\D', '', 'g');
   if length(digits) not between 10 and 11 then return jsonb_build_object('ok', false, 'reason', 'Enter a phone number with area code.'); end if;
-  if length(coalesce(p->>'email','')) > 120 or length(coalesce(p->>'notes','')) > 1000 then return jsonb_build_object('ok', false, 'reason', 'That’s too long.'); end if;
+  if length(coalesce(p->>'email','')) > 120 or length(coalesce(p->>'notes','')) > 1000 or length(coalesce(p->>'bringing','')) > 300 then return jsonb_build_object('ok', false, 'reason', 'That’s too long.'); end if;
   if coalesce(p->>'arr','') !~ '^\d\d:\d\d$' or coalesce(p->>'pick','') !~ '^\d\d:\d\d$' then return jsonb_build_object('ok', false, 'reason', 'Pick drop-off and pickup times.'); end if;
   if jsonb_typeof(p->'pets') <> 'array' or jsonb_array_length(p->'pets') not between 1 and 6 then return jsonb_build_object('ok', false, 'reason', 'Add your pets.'); end if;
   nd := 0; nc := 0;
@@ -205,11 +206,11 @@ begin
   if (select count(*) from requests where created_at > now() - interval '1 hour') >= 20 then
     return jsonb_build_object('ok', false, 'reason', 'We’re getting a lot of requests right now. Please call us.'); end if;
 
-  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes, client_key, own_food)
+  insert into requests (start_date, end_date, arr, pick, dog_spots, cat_spots, name, phone, email, pets, share, notes, client_key, own_food, bringing)
   values (s, e, p->>'arr', p->>'pick', ds, cs, trim(p->>'name'), trim(p->>'phone'), nullif(trim(coalesce(p->>'email','')),''),
           p->'pets', coalesce((p->>'share')::boolean, true), nullif(trim(coalesce(p->>'notes','')),''),
           case when coalesce(p->>'key','') ~ '^[0-9a-fA-F-]{36}$' then (p->>'key')::uuid end,
-          coalesce((p->>'ownFood')::boolean, false))
+          coalesce((p->>'ownFood')::boolean, false), nullif(trim(coalesce(p->>'bringing','')),''))
   returning token into t;
   return jsonb_build_object('ok', true, 'token', t);
 end $$;

@@ -2501,9 +2501,10 @@ function reqFormLine(r, fc){
     : newPets.length ? 'The website asked them for a page for '+petList(newPets)+'.' : '';
   return want && [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, want, h('div',{class:'mut'}, 'Not sent yet. They may bring it on paper instead.'))];
 }
-// the website sends what they're bringing as the note's first line: "Bringing: bed, leash"
-const reqBringing = r => { const m = /^Bringing: (.*)/.exec(r.notes || ''); return m ? m[1].trim() : ''; };
-const reqNote = r => (r.notes || '').replace(/^Bringing: .*(\n\n?)?/, '').trim();
+// what they're bringing (its own field; requests from before it existed carried it as a "Bringing: ..." first line)
+const oldBringing = r => !r.bringing && /^Bringing: (.*)/.exec(r.notes || '');
+const reqBringing = r => r.bringing ? r.bringing.trim() : oldBringing(r) ? oldBringing(r)[1].trim() : '';
+const reqNote = r => oldBringing(r) ? (r.notes || '').replace(/^Bringing: .*(\n\n?)?/, '').trim() : (r.notes || '').trim();
 function openReqStay(r, cid, groups, made){
   const [pets, ...rest] = groups;
   const f = {id:null, client:cid, pets, start:r.start_date, arr:r.arr, end:r.end_date, pick:r.pick, notes:reqNote(r), belongings:reqBringing(r), req:r.id, queue:rest, made};
