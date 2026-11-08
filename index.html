@@ -1202,7 +1202,7 @@ function settingsView(){
       // sample data is for trying the app out; once signed in, the real book is online
       DEMO && [h('div',{class:'sec'},'Demo'),
         h('div',{class:'row start wrap'},
-          btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm'),
+          btn('Reset demo data', ()=>confirmSheet('Reset demo data?','This replaces everything in this browser with fresh sample data.','Reset', ()=>{ S=seed(); S.reqs=demoRequests(); S.gforms=demoForms(); loadRequests(); loadForms(); U.wk=weekStart(today()); U.day=null; }), 'b2 sm'),
           btn('Leave demo', ()=>{ location.href = './'; }, 'lk'))])];
 }
 function exportData(){
@@ -3242,7 +3242,7 @@ function render(){
   const tabs = h('nav',{class:'tabs'},
     [['cal','Calendar'],['today','Today']].map(tab),
     h('button',{class:'newtab', 'aria-label':'New stay', onclick:()=>open({t:'form', f:newStayDraft(null, newDay)})}, h('span',{class:'plus'},'+'), 'New stay'),
-    [['clients','Clients'], (S.book.on || R.list.length || G.list.length || U.tab==='reqs') && ['reqs','Requests'], ['settings','Settings']].filter(Boolean).map(tab));
+    [['clients','Clients'], ['reqs','Requests'], ['settings','Settings']].filter(Boolean).map(tab));
   const fab = null;
   const sh = U.sh && SHEETS[U.sh.t]?.(U.sh) || null;
   if(U.sh && !sh) U.sh = null;
