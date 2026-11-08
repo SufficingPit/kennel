@@ -42,7 +42,7 @@ alter table public.requests add constraint requests_status_check check (status i
 alter table public.requests add column if not exists client_key uuid unique;
 -- false while the answer still needs texting from her phone (answers made before this read as sent)
 alter table public.requests add column if not exists texted boolean not null default true;
--- they're bringing their own food (then the evening pickup fee, which covers a meal, doesn't apply)
+-- they're bringing their own food (good to know; it doesn't change any fee)
 alter table public.requests add column if not exists own_food boolean not null default false;
 alter table public.requests add column if not exists bringing text;   -- what they're bringing for this stay (becomes the stay's belongings)
 

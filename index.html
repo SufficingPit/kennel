@@ -2142,13 +2142,13 @@ function defaultSite(){
     hero:'lineup', heroTag:'',
     boardIntro:'Enjoy your vacation or time away from home without worrying about your fur baby.',
     cards:[
-      {title:'Dogs', text:'Each dog kennel is 4×8 feet. Dogs are let out several times a day to do their business and play. There’s an indoor play area for when it’s too cold or wet outside.\n\nThe indoor play area is shared, so your dog needs to be dog friendly to use it while others are there.', vax:'Vaccines required: Rabies, Canine Distemper, Bordetella'},
+      {title:'Dogs', text:'We have 16 dog kennels. Half are 4×8 feet and half are 3×6 feet. The bigger ones go first come, first served, or to dogs sharing a kennel. Dogs are let out three times a day to do their business and play in a large fenced yard. There’s an indoor play area for when it’s too cold or wet outside.\n\nThe indoor play area is shared, so your dog needs to be dog friendly to use it while others are there.', vax:'Vaccines required: Rabies, Canine Distemper, Bordetella'},
       {title:'Cats and ferrets', text:'Cats get their own cat condo in the lobby. There are two condos, and each fits up to 2 large cats or 3 small cats who get along. A kennel in the dog area is available if absolutely needed.\n\nFerrets are housed the same as cats if no cage is brought.', vax:'Vaccines required for cats: Rabies, FVRCP, Feline Leukemia'},
       {title:'Other pets', text:'Birds, reptiles, rabbits and other small pets are welcome. Please bring their cage or enclosure (or a temporary one). They stay in the lobby or kennel area depending on space.', vax:'Vaccines: up to date where applicable'}],
     vaxNote:'All pets must have up-to-date vaccinations appropriate for their species. This keeps not only other pets healthy, but yours too when they stay!',
     prices:[{label:'Dogs', sub:'per dog', price:'$25'}, {label:'Cats', sub:'per cat', price:'$15'}, {label:'Other pets', sub:'per pet', price:'$10'}],
     shareNote:'Two pets sharing a kennel, condo or enclosure: $2 off each. For example, two dogs in one kennel are $23 each, $46 a night.',
-    extras:[{label:'Pickup during evening hours (covers their evening meal; no charge if you bring their food)', price:'+$5'}, {label:'Drop-off or pickup outside hours', price:'+$10'}, {label:'Medications given', price:'+$2'}],
+    extras:[{label:'Late pickup in the evening (your pet uses the kennel all day, like a late checkout). Not on Sundays', price:'+$5'}, {label:'Drop-off or pickup outside hours', price:'+$10'}, {label:'Medications given', price:'+$2'}],
     payNote:'We take cards through Square. Card payments have a 2.6% fee to cover Square’s charge.',
     about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska north of Funk. We accept most any small pet, not just dogs and cats! We provide a safe place to house your fur, feather, or scaly babies when you are away from home for whatever reason.\n\nOwner Ashleigh Jauken operates the facility mostly by herself, but now has two young sons in tow. You’ll probably see Kaleb, Kolby, or both as she works. She has always loved all animals and has experience with many pets throughout her life. She went to Nebraska College of Technical Agriculture and studied to become a vet tech. Although she didn’t quite make it to a licensed vet tech, she still graduated with a Degree of Applied Animal Science.\n\nAshleigh came up with the name Little Village Pet Lodge from the facility’s location. It’s just north of Funk, Nebraska, which is officially called the Village of Funk. “I thought it would be fun to call my business Little Village because of its location near Funk. Plus, there are hopefully going to be many different animals staying there, like a village would, so why not Little Village?” Ashleigh says. The Lodge part of the name also comes from where the property is. “When you think lodge, you usually think of a place out in the country, and my little pet village is out in the country, so it made perfect sense to say lodge at the end instead of boarding. And that’s how Little Village Pet Lodge was named!”',
     groomer:'Do you or someone you know groom animals? Need somewhere to operate? Little Village is looking for a groomer to rent space here at the lodge! Call, text, or email for more information!',
@@ -2319,7 +2319,8 @@ function billFor(s){
   if(pets.length > 1 && R0.share) lines.push({key:'share', label:'Sharing a kennel', sub:pets.length+' pets × '+plural(nights,'night')+' × '+money(-R0.share), amt:-pets.length*nights*R0.share});
   if(B.fee && offHours(s.start, s.arr)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(s.arr), amt:B.fee});
   if(B.fee && offHours(s.end, s.pick)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(s.pick), amt:B.fee});
-  else if(B.eveFee && !s.ownFood && s.pick >= (B.eveFrom || '16:00')) lines.push({key:'eve', label:'Evening pickup (meal)', sub:t12(s.pick), amt:B.eveFee});
+  // a late pickup: the kennel's used all day, like a late checkout (not on Sundays, when the hours are only evenings)
+  else if(B.eveFee && s.pick >= (B.eveFrom || '16:00') && parseD(s.end).getDay()!==0) lines.push({key:'eve', label:'Late pickup', sub:t12(s.pick), amt:B.eveFee});
   lines.forEach(l => { l.auto = true; l.waived = waived.has(l.key); });
   (s.charges||[]).forEach(c => lines.push({id:c.id, label:c.label || (c.amt < 0 ? 'Discount' : 'Extra charge'), sub:c.qty > 1 ? c.qty+' × '+money(c.amt) : '', amt:c.amt*(c.qty||1)}));
   const sub = lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0);
@@ -2343,7 +2344,7 @@ function billCard(s, editable){
       R0.meds ? btn('+ Meds '+money(R0.meds), ()=>{ const m = (s.charges ||= []).find(c => c.label==='Medications given' && c.amt===R0.meds); if(m) m.qty = (m.qty||1) + 1; else s.charges.push({id:uid('c'), label:'Medications given', amt:R0.meds, qty:1}); commit(); }, 'chip add') : null,
       R0.card ? chip((s.card ? '✓ ' : '')+'Paid by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); }) : null,
       chip((s.ownFood ? '✓ ' : '')+'Brought own food', !!s.ownFood, ()=>{ s.ownFood = !s.ownFood; if(!s.ownFood) delete s.ownFood; commit(); })),
-    editable && h('p',{class:'mut', style:'margin:6px 0 0;font-size:13px'}, 'Tap a fee to waive it. Tap a charge or discount to change it. The evening pickup fee covers a meal, so it’s left off when they bring their own food.')];
+    editable && h('p',{class:'mut', style:'margin:6px 0 0;font-size:13px'}, 'Tap a fee to waive it. Tap a charge or discount to change it. The late pickup fee is left off on Sundays.')];
 }
 
 // add or change one extra charge or discount on a stay
@@ -2383,10 +2384,10 @@ function ratesSection(){
     group('r-night','Per night', 'Dogs '+money(R0.dog)+' · Cats '+money(R0.cat)+' · Other '+money(R0.other), [
       field('Dog', num(R0,'dog',{label:'Dog per night'})), field('Cat', num(R0,'cat',{label:'Cat per night'})), field('Other pets', num(R0,'other',{label:'Other pets per night'})),
       field('Pets sharing a kennel get off, each, per night', num(R0,'share',{label:'Sharing discount'}))]),
-    group('r-fees','Fees', [b.eveFee && 'Evening pickup '+money(b.eveFee), b.fee && 'Other times '+money(b.fee), R0.meds && 'Meds '+money(R0.meds), R0.card && 'Card '+R0.card+'%'].filter(Boolean).join(' · ') || 'None', [
+    group('r-fees','Fees', [b.eveFee && 'Late pickup '+money(b.eveFee), b.fee && 'Other times '+money(b.fee), R0.meds && 'Meds '+money(R0.meds), R0.card && 'Card '+R0.card+'%'].filter(Boolean).join(' · ') || 'None', [
       field('Drop-off or pickup outside your hours', num(b,'fee',{label:'Outside hours fee'})),
-      field('Evening pickup (for their evening meal; not charged when they bring food)', h('div',{class:'row start wrap'}, num(b,'eveFee',{label:'Evening pickup fee'}), h('span',{class:'mut'},'at or after'),
-        h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
+      field('Late pickup (they use the kennel all day; never on Sundays)', h('div',{class:'row start wrap'}, num(b,'eveFee',{label:'Late pickup fee'}), h('span',{class:'mut'},'at or after'),
+        h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Late pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
       field('Medications (the + Meds button on a stay)', num(R0,'meds',{label:'Meds charge'})),
       field('Card payments', num(R0,'card',{pre:'', post:'% added', label:'Card fee percent'})),
       h('p',{class:'mut', style:'margin:0'},'Your drop-off and pickup hours are under Online booking.')])];
@@ -2479,7 +2480,7 @@ function bookingSection(){
     group('b-hours','Drop-off and pickup hours', hourLines.map(l => (l.from===l.to ? DAYS[l.from] : DAYS[l.from]+'–'+DAYS[l.to])+' '+l.t).join(' · '), [
       DAYS.map((d, i) => h('button',{class:'card docrow', onclick:()=>open({t:'hours', day:i})},
         h('b',{style:'width:44px;flex:none'}, d), h('span',{class:'grow'}, winText(b.hours[i])), h('span',{class:'mut'},'›'))),
-      h('p',{class:'mut', style:'margin:0'},'Fees for evening pickups and other times are under Rates. The request page shows them next to the times.')]),
+      h('p',{class:'mut', style:'margin:0'},'Fees for late pickups and other times are under Rates. The request page shows them next to the times.')]),
     group('b-stay','Stay rules', join(nightsText(b.minN)+' minimum', 'book '+(b.lead===0 ? 'same day' : leadText(b.lead)), 'up to '+aheadText(b.ahead)), [
       field('Shortest stay', stepper(b.minN, 1, 30, 1, v=>set('minN', v), nightsText)),
       field('Book at least', stepper(b.lead, 0, 30, 1, v=>set('lead', v), leadText)),
@@ -2895,7 +2896,7 @@ function reqSheet(u){
         const ids = reqStays(r); S.stays = S.stays.filter(s => !ids.includes(s.id)); U.sh = {t:'req', id:r.id}; }, {t:'req', id:r.id}), 'b2 sm'))),
     h('div',{class:'card'},
       line('Drop-off', wmd(r.start_date)+', '+t12(r.arr)+(offHours(r.start_date, r.arr) ? ' (other time'+fee+')' : '')),
-      line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : S.book.eveFee && r.pick >= (S.book.eveFrom||'16:00') ? ' (evening pickup, $'+S.book.eveFee+')' : '')),
+      line('Pickup', wmd(r.end_date)+', '+t12(r.pick)+(offHours(r.end_date, r.pick) ? ' (other time'+fee+')' : S.book.eveFee && r.pick >= (S.book.eveFrom||'16:00') && parseD(r.end_date).getDay()!==0 ? ' (late pickup, $'+S.book.eveFee+')' : '')),
       h('div',{class:'mut'}, plural(n,'night')+' · sent '+ago(r.created_at))),
     h('div',{class:'sec'},'Pets'),
     h('div',{class:'card'}, r.pets.map(p => h('div',{}, h('b',{}, p.name), ' · '+(p.species==='cat' ? 'Cat' : p.species==='other' ? (p.kind || 'Other') : 'Dog')+(p.breed ? ', '+p.breed : '')
