@@ -1171,7 +1171,7 @@ function matchClient(c, q){
   return c.name.toLowerCase().includes(q) || c.pets.some(p=>p.name.toLowerCase().includes(q)) || (qd.length>2 && allPhones(c).some(x=>x.includes(qd))) || (c.first||'').toLowerCase().includes(q);
 }
 const byName = (a,b) => a.name.localeCompare(b.name);
-/* Archiving keeps history: an archived family (c.archived) or a pet that no longer comes (p.gone)
+/* Archiving keeps history: an archived family (c.archived) or an archived pet (p.gone)
    is hidden from lists and pickers, but their past stays, details and forms stay as they were.
    They come back on their own when they book again, or with "Bring back". Deleting for good is
    still there, behind the archive. */
@@ -1822,20 +1822,20 @@ function clientSheet(u){
       stays.length ? stays.map(s => h('button',{class:'card row', onclick:()=>open({t:'stay',id:s.id})},
         h('span',{class:'grow'}, h('b',{}, md(s.start)+' – '+md(s.end)), h('div',{class:'mut'}, petNames(s)+' · '+pieces(s).map(p => kennel(p.k).name).join(' → '))),
         h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)))) : h('p',{class:'mut'},'No stays yet.'),
-      c.pets.some(p => p.gone) && [h('div',{class:'sec'},'No longer come'),
+      c.pets.some(p => p.gone) && [h('div',{class:'sec'},'Archived pets'),
         c.pets.filter(p => p.gone).map(p => h('button',{class:'card row', onclick:()=>open({t:'pet', id:p.id, back:u})},
-          h('span',{class:'grow'}, h('b',{}, p.name), h('div',{class:'mut'}, 'Since '+ymd(p.gone))), h('span',{class:'chev'}, '›')))],
-      c.archived
-        ? h('div',{style:'margin:24px 0 8px'},
-            btn('Bring back the '+c.name+' family', ()=>{ delete c.archived; commit(); }, 'b2'),
-            h('div',{style:'margin-top:14px'}, btn('Delete for good', ()=>confirmSheet('Delete the '+c.name+' family for good?', 'Erases them, their '+plural(c.pets.length,'pet')+' and all '+plural(stays.length,'stay')+', past ones too'+(famForms(c).length || c.waivers ? ', and their guest forms and waivers' : '')+'. This can’t be undone.', 'Delete for good', ()=>{
-              const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
-              famForms(c).forEach(g => saveForm(g, {status:'deleted'})); G.list = G.list.filter(g => g.status!=='deleted');
-            }, u), 'lk bad')))
-        : h('div',{style:'margin:24px 0 8px'}, h('div',{style:'margin-bottom:10px'}, btn('Merge with another family', ()=>mergeWithPick(c, u), 'lk')), btn('Archive family', ()=>{ const up = upcomingStays(c.id);
+          h('span',{class:'grow'}, h('b',{}, p.name), h('div',{class:'mut'}, 'Archived '+ymd(p.gone))), h('span',{class:'chev'}, '›')))],
+      h('div',{style:'margin:24px 0 8px'},
+        h('div',{style:'margin-bottom:10px'}, btn('Merge with another family', ()=>mergeWithPick(c, u), 'lk')),
+        c.archived ? btn('Bring back the '+c.name+' family', ()=>{ delete c.archived; commit(); }, 'b2')
+        : btn('Archive family', ()=>{ const up = upcomingStays(c.id);
             confirmSheet('Archive the '+c.name+' family?', 'They’re hidden from your family list. Their past stays and details are kept, and they come back if they book again.'+(up.length ? ' Their '+plural(up.length,'upcoming stay')+' will be deleted.' : ''), 'Archive', ()=>{
               const ids = new Set(up.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); c.archived = today();
-            }, u); }, 'lk bad'))]
+            }, u); }, 'lk'),
+        h('div',{style:'margin-top:14px'}, btn('Delete the family for good', ()=>confirmSheet('Delete the '+c.name+' family for good?', 'Erases them, their '+plural(c.pets.length,'pet')+' and all '+plural(stays.length,'stay')+', past ones too'+(famForms(c).length || c.waivers ? ', and their guest forms and waivers' : '')+'. This can’t be undone. To keep their history, archive them instead.', 'Delete for good', ()=>{
+          const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
+          famForms(c).forEach(g => saveForm(g, {status:'deleted'})); G.list = G.list.filter(g => g.status!=='deleted');
+        }, u), 'lk bad')))]
   ];
   const foot = isNew
     ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back ? ()=>open(back) : close, 'b2'), btn(back ? 'Save & use for stay' : 'Save family', saveNew)]
@@ -1915,20 +1915,20 @@ function petSheet(u){
     h('p',{class:'mut', style:'margin-top:0'},'Feeding, potty breaks and meds. For meds, put the name, dose and instructions in the note. Changes apply from today; earlier days keep what was scheduled.'),
     planEditor(p.plan, null, true),
     !isNew && h('div',{style:'margin:24px 0 8px'}, saved
-      ? (p.gone
-        ? h('div',{}, btn('Bring back '+p.name, ()=>{ delete p.gone; commit(); }, 'b2'),
-            h('div',{style:'margin-top:14px'}, btn('Delete '+p.name+' for good', ()=>confirmSheet('Delete '+p.name+' for good?', 'Erases '+p.name+' and takes them off every stay, past ones too. Stays left with no pets are deleted. This can’t be undone.', 'Delete for good', ()=>{
+      ? h('div',{},
+        p.gone ? btn('Bring back '+p.name, ()=>{ delete p.gone; commit(); }, 'b2')
+        : btn('Archive '+p.name, ()=>{ const up = upcomingStays(c.id, p.id);
+            confirmSheet('Archive '+p.name+'?', p.name+' is hidden from new stays. Past stays and their details are kept, and you can bring them back anytime.'+(up.length ? ' They’ll be taken off '+plural(up.length,'upcoming stay')+'; any left with no pets are deleted.' : ''), 'Archive', ()=>{
+              const ids = new Set(up.map(s=>s.id));
+              S.stays.forEach(s=>{ if(ids.has(s.id)){ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); } });
+              S.stays = S.stays.filter(s=>s.pets.length); p.gone = today(); U.sh = {t:'client', id:c.id};
+            }, u); }, 'lk'),
+            h('div',{style:'margin-top:14px'}, btn('Delete '+p.name+' for good', ()=>confirmSheet('Delete '+p.name+' for good?', 'Erases '+p.name+' and takes them off every stay, past ones too. Stays left with no pets are deleted. This can’t be undone. To keep their history, archive them instead.', 'Delete for good', ()=>{
               c.pets = c.pets.filter(y=>y!==p);
               S.stays.forEach(s=>{ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); });
               S.stays = S.stays.filter(s=>s.pets.length);
               U.sh = {t:'client', id:c.id};
             }, u), 'lk bad')))
-        : btn(p.name+' no longer comes', ()=>{ const up = upcomingStays(c.id, p.id);
-            confirmSheet(p.name+' no longer comes?', p.name+' is hidden from new stays. Past stays and their details are kept, and you can bring them back anytime.'+(up.length ? ' They’ll be taken off '+plural(up.length,'upcoming stay')+'; any left with no pets are deleted.' : ''), 'Yes', ()=>{
-              const ids = new Set(up.map(s=>s.id));
-              S.stays.forEach(s=>{ if(ids.has(s.id)){ s.pets = s.pets.filter(i=>i!==p.id); s.extra = s.extra.filter(t=>t.pet!==p.id); } });
-              S.stays = S.stays.filter(s=>s.pets.length); p.gone = today(); U.sh = {t:'client', id:c.id};
-            }, u); }, 'lk bad'))
       : btn('Remove '+p.name, ()=>{ c.pets = c.pets.filter(y=>y!==p); back(); }, 'lk bad'))
   ], isNew ? [u.err && h('div',{class:'err'}, u.err), btn('Cancel', back, 'b2'), btn(u.toStay ? 'Add to stay' : 'Add pet', addIt)] : btn('Done', back), back);
 }
