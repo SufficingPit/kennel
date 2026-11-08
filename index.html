@@ -1190,7 +1190,10 @@ function clientsView(){
     const row = c => h('button',{class:'card row', onclick:()=>open({t:'client',id:c.id})},
       h('div',{class:'grow'}, h('b',{}, c.name+' family'), c.archived && h('span',{class:'pill', style:'margin-left:6px'}, 'Archived'), h('div',{class:'mut'}, clientLine(c))),
       h('span',{class:'mut'},'›'));
-    list.replaceChildren(...(res.length ? res.map(row) : [h('p',{class:'empty', style:q ? '' : 'padding-top:40px'}, q ? 'No family matches “'+U.q.trim()+'”.' : 'No families yet.')]),
+    const dups = q ? [] : dupGroups();
+    list.replaceChildren(...dups.map(g => h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'merge', ids:g.ids, why:g.why})},
+        h('div',{class:'grow'}, h('b',{}, 'Possible duplicate: '+[...new Set(g.ids.map(i => client(i).name))].join(' / ')+' family'), h('div',{class:'mut'}, plural(g.ids.length, 'family').replace('familys','families')+' look the same ('+g.why+'). Review')), h('span',{class:'mut'},'›'))),
+      ...(res.length ? res.map(row) : [h('p',{class:'empty', style:q ? '' : 'padding-top:40px'}, q ? 'No family matches “'+U.q.trim()+'”.' : 'No families yet.')]),
       !q && nArch ? h('button',{class:'lk', style:'margin-top:8px', onclick:()=>{ U.showArch = !U.showArch; draw(); }}, U.showArch ? 'Hide archived families' : 'Show '+plural(nArch, 'archived family').replace('familys','families')) : '');
   };
   draw();
@@ -1629,6 +1632,121 @@ function waiverSheet(u){
         const was = w.signed || w.at; c.waivers = c.waivers.filter(x => x!==w); if(!c.waivers.length) delete c.waivers; unSigned(c, was); U.sh = {t:'client', id:c.id}; }, u), 'lk bad'))
   ], btn('Done', back), back);
 }
+/* ---------- duplicate families ----------
+   Two families look like the same people when they share a phone number, or the same last name
+   plus a pet's name or the first name. Groups can be bigger than two. Merging keeps the family with
+   the most stays (its details win), fills in what it's missing from the others, puts anything that
+   differs into its notes, makes same-named pets one pet, and moves over everything else: pets, stays,
+   check-offs, records, guest forms and waiver scans. "Not the same family" (c.notSame) stops the suggestion. */
+const lc = v => String(v || '').trim().toLowerCase();
+const famStays = c => { const ids = new Set(c.pets.map(p => p.id)); return S.stays.filter(x => x.pets.some(i => ids.has(i))); };
+function sameFamily(a, b){
+  if((a.notSame || []).includes(b.id) || (b.notSame || []).includes(a.id)) return '';
+  // a number typed without its area code still matches on the last 7 digits
+  const same = (x, y) => x.length===7 || y.length===7 ? x.slice(-7)===y.slice(-7) : x.slice(-10)===y.slice(-10);
+  if(allPhones(a).some(x => allPhones(b).some(y => same(x, y)))) return 'same phone';
+  if(!lc(a.name) || lc(a.name)!==lc(b.name)) return '';
+  const names = new Set(livePets(a).map(x => lc(x.name)));
+  if(livePets(b).some(x => names.has(lc(x.name)))) return 'same name and pet';
+  return lc(a.first) && lc(a.first)===lc(b.first) ? 'same name' : '';
+}
+let dupMemo = {key:'', groups:[]};
+function dupGroups(){
+  const key = JSON.stringify(S.clients.map(c => [c.id, c.name, c.first, c.cell, c.phone, c.work, c.notSame, c.pets.map(x => x.name+(x.gone ? '-' : ''))]));
+  if(dupMemo.key===key) return dupMemo.groups;
+  const cs = S.clients, up = cs.map((_, i) => i), find = i => up[i]===i ? i : (up[i] = find(up[i])), why = {};
+  for(let i = 0; i < cs.length; i++) for(let j = i + 1; j < cs.length; j++){
+    const w = sameFamily(cs[i], cs[j]); if(w){ const a = find(i), b = find(j); if(a!==b) up[b] = a; (why[cs[i].id] ||= new Set()).add(w); (why[cs[j].id] ||= new Set()).add(w); } }
+  const by = {}; cs.forEach((c, i) => (by[find(i)] ||= []).push(c));
+  const groups = Object.values(by).filter(g => g.length > 1).map(g => ({ids:g.map(c => c.id), why:[...new Set(g.flatMap(c => [...(why[c.id] || [])]))].join(', ')}));
+  dupMemo = {key, groups};
+  return groups;
+}
+const dupOf = c => dupGroups().find(g => g.ids.includes(c.id));
+// the one to keep: most stays, then a signed waiver, then the one entered first
+function mergeKeeper(cs){
+  const score = c => famStays(c).length*10 + (c.signed ? 2 : 0) + (c.archived ? 0 : 1);
+  return cs.reduce((a, b) => score(b) > score(a) ? b : a);
+}
+const PHONE_KEYS = ['cell', 'phone', 'work'];
+function mergeFamilies(ids){
+  const cs = ids.map(client).filter(Boolean); if(cs.length < 2) return;
+  const keep = mergeKeeper(cs), others = cs.filter(c => c!==keep), notes = [];
+  const label = k => (FAM_FIELDS.find(f => f[0]===k) || [, k])[1];
+  for(const o of others){
+    // phones: a new number goes in an empty phone slot, else into the notes
+    allPhones(o).forEach(ph => { if(allPhones(keep).some(x => x.slice(-10)===ph.slice(-10))) return;
+      const slot = PHONE_KEYS.find(k => !keep[k]); if(slot) keep[slot] = fmtPhone(ph); else notes.push('Phone: '+fmtPhone(ph)); });
+    for(const k in CLIENT_DEF){ if(PHONE_KEYS.includes(k) || k==='notes' || k==='signed') continue;
+      const v = o[k]; if(!String(v || '').trim()) continue;
+      if(!String(keep[k] || '').trim()) keep[k] = v; else if(lc(keep[k])!==lc(v)) notes.push(label(k)+': '+v); }
+    if(o.notes && !(keep.notes || '').includes(o.notes)) notes.push(o.notes);
+    if(o.signed && (!keep.signed || keep.signed < o.signed)) keep.signed = o.signed;
+    if(o.formUpdate) keep.formUpdate = true;
+    if(o.waivers) keep.waivers = [...(keep.waivers || []), ...o.waivers];
+    keep.keepMine = {...(o.keepMine || {}), ...(keep.keepMine || {})};
+    keep.notSame = [...new Set([...(keep.notSame || []), ...(o.notSame || [])])].filter(x => !ids.includes(x));
+    if(!keep.notSame.length) delete keep.notSame;
+    if(!Object.keys(keep.keepMine).length) delete keep.keepMine;
+    // pets: same name and kind become one; the rest move over
+    for(const op of o.pets){
+      const kp = keep.pets.find(x => lc(x.name)===lc(op.name) && x.species===op.species);
+      if(!kp){ keep.pets.push(op); continue; }
+      for(const k in PET_DEF){ const v = op[k]; if(k==='notes') continue;
+        if(Array.isArray(v) ? v.length && !kp[k].length : String(v || '').trim() && !String(kp[k] || '').trim()) kp[k] = Array.isArray(v) ? [...v] : v; }
+      if(op.notes && !(kp.notes || '').includes(op.notes)) kp.notes = kp.notes ? kp.notes+'\n'+op.notes : op.notes;
+      if(op.docs) kp.docs = [...(kp.docs || []), ...op.docs];
+      if(!op.gone) delete kp.gone;   // still coming under either record
+      // their meds that the kept pet doesn't have yet
+      op.plan.filter(t => t.tag==='meds' && !kp.plan.some(x => x.tag==='meds' && lc(x.note)===lc(t.note))).forEach(t => kp.plan.push(t));
+      // stays and check-offs point at the kept pet (a check-off follows to its task of the same kind)
+      const taskFor = tid => { if(kp.plan.some(t => t.id===tid)) return tid; const t = op.plan.find(x => x.id===tid);
+        return (t && kp.plan.find(x => x.tag===t.tag) || {id:tid}).id; };
+      S.stays.forEach(x => { if(x.pets.includes(op.id)) x.pets = [...new Set(x.pets.map(i => i===op.id ? kp.id : i))];
+        (x.extra || []).forEach(t => { if(t.pet===op.id) t.pet = kp.id; }); });
+      for(const key of Object.keys(S.log)){ const a = key.split('|'); if(a[1]!==op.id) continue;
+        a[1] = kp.id; a[2] = taskFor(a[2]); const nk = a.join('|'); if(!S.log[nk]) S.log[nk] = S.log[key]; delete S.log[key]; }
+    }
+    G.list.filter(g => g.client_id===o.id).forEach(g => saveForm(g, {client_id:keep.id}));
+  }
+  if(notes.length) keep.notes = [keep.notes, 'From the merge: '+notes.join('; ')].filter(Boolean).join('\n');
+  if(others.every(o => !o.archived) || !keep.archived) delete keep.archived;
+  S.clients = S.clients.filter(c => !others.includes(c));
+  save();
+  // more than one family going at once is held back as a safety check; a merge is on purpose, so let it through
+  if(Y.held){ const at = new Date().toISOString();
+    others.forEach(o => { const k = 'client:'+o.id; if(Y.held[k]){ Y.pending[k] = {deleted:true, at}; delete Y.held[k]; } });
+    if(!Object.keys(Y.held).length) Y.held = null; saveSync(); }
+  U.sh = {t:'client', id:keep.id}; render();
+  toast('Merged into the '+keep.name+' family.'+(notes.length ? ' What differed is in their notes.' : ''));
+}
+function mergeSheet(u){
+  const cs = u.ids.map(client).filter(Boolean);
+  const back = () => u.back ? open(u.back) : close();
+  if(cs.length < 2) return sheet('Same family?', h('p',{}, 'Nothing left to merge.'), btn('Done', back), back);
+  const keep = mergeKeeper(cs);
+  const notSame = c => { const rest = cs.filter(x => x!==c);
+    c.notSame = [...new Set([...(c.notSame || []), ...rest.map(x => x.id)])]; u.ids = rest.map(x => x.id); commit(); };
+  const famCard = c => { const st = famStays(c).length, nf = famForms(c).length;
+    return h('div',{class:'card', style:c===keep ? 'border:1px solid var(--pri)' : ''},
+      h('div',{class:'row'}, h('b',{}, (c.first ? c.first+' ' : '')+c.name+' family'), c===keep ? h('span',{class:'pill ok'}, 'Keeping this one') : c.archived && h('span',{class:'pill'}, 'Archived')),
+      h('div',{}, [c.cell, c.phone, c.work].filter(Boolean).join(' · ') || 'No phone'),
+      h('div',{class:'mut'}, (livePets(c).map(x => x.name).join(', ') || 'No pets')+' · '+plural(st, 'stay')+(nf ? ' · '+plural(nf, 'guest form') : '')+(c.signed ? ' · waiver signed' : '')),
+      h('div',{class:'row start', style:'margin-top:4px'}, btn('Open', ()=>open({t:'client', id:c.id}), 'lk'), btn('Not the same family', ()=>notSame(c), 'lk')));
+  };
+  return sheet('Same family?', [
+    h('p',{class:'mut', style:'margin-top:0'}, u.why ? cs.length+' families look like the same people ('+u.why+').' : 'Check these are the same people before you merge them.'),
+    cs.map(famCard),
+    h('div',{class:'card', style:'margin-top:12px'}, h('b',{}, 'Merging them'),
+      h('div',{}, 'Keeps the '+keep.name+' family (the most stays) and moves everything else onto it: pets, stays, records, guest forms and waivers.'),
+      h('div',{class:'mut'}, 'Pets with the same name become one. Details it’s missing are filled in from the others; anything that differs goes in its notes.'))
+  ], [btn('Cancel', back, 'b2'), btn('Merge '+cs.length+' families', ()=>mergeFamilies(cs.map(c => c.id)))], back);
+}
+function mergeWithPick(c, u){
+  pickList({title:'Merge with which family?', search:'Search family, pet or phone', focus:true,
+    items: q => S.clients.filter(x => x.id!==c.id && matchClient(x, q)).sort(byName).map(x => ({id:x.id, label:x.name+' family'+(x.archived ? ' (archived)' : ''), sub:clientLine(x)})),
+    onPick: id => open({t:'merge', ids:[c.id, id], back:u})});
+}
 function clientSheet(u){
   const isNew = !u.id;
   const c = isNew ? (u.draft ||= fillClient({id:uid('c'), name:u.name||'', pets:[]})) : client(u.id);
@@ -1658,7 +1776,10 @@ function clientSheet(u){
     else open({t:'client', id:c.id});
   };
 
+  const dup = !isNew && dupOf(c);
   const body = [
+    dup && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'merge', ids:dup.ids, why:dup.why, back:u})},
+      h('span',{class:'grow'}, h('b',{}, 'Possible duplicate'), h('div',{class:'mut'}, 'Looks like the same people as '+(o => o.every(x => x.name===c.name) ? (o.length > 1 ? o.length+' other '+c.name+' families' : 'another '+c.name+' family') : 'the '+[...new Set(o.map(x => x.name))].join(' and ')+' famil'+(o.length > 1 ? 'ies' : 'y'))(dup.ids.filter(i => i!==c.id).map(client))+' ('+dup.why+'). Review')), h('span',{class:'chev'}, '›')),
     two(tf(c,'first','First name',sv), field('Last name', h('input',{value:c.name, autocomplete:'off', placeholder:'Family name',
       oninput:e=>{ c.name=e.target.value; u.err=''; drawHint(); }, onchange:e=>{ if(!isNew && e.target.value.trim()){ c.name=e.target.value.trim(); commit(); } }}))),
     two(tf(c,'cell','Cell phone',sv,{type:'tel', ...live}), tf(c,'phone','Main phone',sv,{type:'tel', ...live})),
@@ -1711,7 +1832,7 @@ function clientSheet(u){
               const ids = new Set(stays.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); S.clients = S.clients.filter(x=>x!==c);
               famForms(c).forEach(g => saveForm(g, {status:'deleted'})); G.list = G.list.filter(g => g.status!=='deleted');
             }, u), 'lk bad')))
-        : h('div',{style:'margin:24px 0 8px'}, btn('Archive family', ()=>{ const up = upcomingStays(c.id);
+        : h('div',{style:'margin:24px 0 8px'}, h('div',{style:'margin-bottom:10px'}, btn('Merge with another family', ()=>mergeWithPick(c, u), 'lk')), btn('Archive family', ()=>{ const up = upcomingStays(c.id);
             confirmSheet('Archive the '+c.name+' family?', 'They’re hidden from your family list. Their past stays and details are kept, and they come back if they book again.'+(up.length ? ' Their '+plural(up.length,'upcoming stay')+' will be deleted.' : ''), 'Archive', ()=>{
               const ids = new Set(up.map(s=>s.id)); S.stays = S.stays.filter(s=>!ids.has(s.id)); c.archived = today();
             }, u); }, 'lk bad'))]
@@ -3249,7 +3370,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
   S[spKey(sp)] = draft; U.sh = null; commit();
 }
 
-const SHEETS = {fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+const SHEETS = {merge:mergeSheet, fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
