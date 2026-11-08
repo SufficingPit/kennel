@@ -160,11 +160,11 @@ body.typing .sh>.ft{position:static;border-top:0}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .ov.pk{z-index:30;background:rgba(0,0,0,.35)}
 .sh{background:var(--bg);width:100%;max-width:560px;max-height:92dvh;overflow:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:0 16px;display:flex;flex-direction:column}
-.sh>.hd{position:sticky;top:0;background:var(--bg);z-index:3;padding:14px 0 10px;display:flex;align-items:center;gap:8px}
+.sh>.hd{position:sticky;top:0;background:var(--bg);z-index:3;margin:0 -16px;padding:14px 16px 10px;display:flex;align-items:center;gap:8px}
 .sh>.hd h1{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sh>.hd .ic{margin-right:-10px}
 .sh>.sb{flex:1}
-.sh>.ft{flex-wrap:wrap;position:sticky;bottom:0;background:var(--bg);z-index:3;padding:12px 0 calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);margin-top:8px}
+.sh>.ft{flex-wrap:wrap;position:sticky;bottom:0;background:var(--bg);z-index:3;padding:12px 16px calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);margin:8px -16px 0}
 .sh>.ft .b{flex:1}
 .sh>.ft.only-pad{border-top:0;padding-top:0}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--field);margin:8px auto 0;flex:none}
@@ -1520,7 +1520,7 @@ function formSays(c){
   const own = {}, pets = {}, put = (o, k, v) => { if(Array.isArray(v) ? v.length : String(v ?? '').trim()) o[k] = v; };
   forms.forEach(g => { const d = g.data || {}, O = d.owner || {};
     FAM_FIELDS.forEach(([, , fk]) => put(own, fk, O[fk]));
-    (d.pets || []).forEach(fp => { const nm = (fp.name || '').trim().toLowerCase(); if(!nm) return; const P = pets[nm] ||= {};
+    shownPets(g).forEach(fp => { const nm = (fp.name || '').trim().toLowerCase(); if(!nm) return; const P = pets[nm] ||= {};
       PET_FIELDS.forEach(([k]) => put(P, k, k==='personality' ? (fp[k] || []).slice(0, 1) : fp[k])); }); });
   return {date:formDate(forms[forms.length-1]), own, pets};
 }
@@ -1559,52 +1559,73 @@ const famForms = c => G.list.filter(g => g.client_id===c.id && (g.status==='file
 const newestFirst = (a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
 const formDate = g => fmt(new Date(g.created_at));   // the local day it was sent
 const signDate = g => g.data?.sign?.name ? (g.data.sign.date || formDate(g)) : null;
+// scanned pages (c.waivers, kept under that name): what each one is. w.kind is the file (img or pdf), w.page the page.
+const scanPage = w => w.page || 'waiver';
+const SCAN_PAGES = [['waiver','Signed waiver'],['family','Family page'],['pet','Pet page'],['other','Other']];
+const scanTitle = (c, w) => scanPage(w)==='pet' ? ((c.pets.find(p => p.id===w.pet) || {}).name || 'Pet')+'’s page' : scanPage(w)==='other' ? (w.name || 'Other page') : (SCAN_PAGES.find(x => x[0]===scanPage(w)) || [])[1];
+const waiverScans = c => (c.waivers || []).filter(w => scanPage(w)==='waiver' && !w.archived);
+// pages of an online form she archived (c.formHide[form id] = pet names, lower case)
+const hiddenOf = g => (client(g.client_id)?.formHide?.[g.id]) || [];
+const shownPets = g => (g.data?.pets || []).filter(p => !hiddenOf(g).includes(lc(p.name)));
 function formsOf(c){
   const all = famForms(c).sort((a, b) => a.created_at < b.created_at ? 1 : -1), live = all.filter(g => g.status==='filed');
-  // current: their newest whole form, plus pet pages sent after it
+  // current online form: their newest whole form, plus pet pages sent after it
   const full = live.find(g => g.mode!=='pets');
   const cur = full ? [full, ...live.filter(g => g.mode==='pets' && g.created_at > full.created_at)] : live.filter(g => g.mode==='pets');
-  const signs = [...(c.waivers || []).map(w => ({w, date:w.signed || w.at})), ...live.filter(signDate).map(g => ({g, date:signDate(g)}))].sort(newestFirst);   // a scan wins a same-day tie
+  const signs = [...waiverScans(c).map(w => ({w, date:w.signed || w.at})), ...live.filter(signDate).map(g => ({g, date:signDate(g)}))].sort(newestFirst);   // a scan wins a same-day tie
   const waiver = signs[0] || null;
+  // current paper pages, in her order: everything not archived, and only the newest signed waiver
+  const newestScan = waiverScans(c).map(w => ({w, date:w.signed || w.at})).sort(newestFirst)[0]?.w;
+  const scans = (c.waivers || []).filter(w => !w.archived && (scanPage(w)!=='waiver' || w===newestScan));
   const older = [...all.filter(g => !cur.includes(g)).map(g => ({g, date:formDate(g)})),
-    ...(c.waivers || []).filter(w => w!==waiver?.w).map(w => ({w, date:w.signed || w.at}))].sort(newestFirst);
-  return {cur, waiver, older};
+    ...(c.waivers || []).filter(w => !scans.includes(w)).map(w => ({w, date:w.signed || w.at}))].sort(newestFirst);
+  return {cur, waiver, scans, older};
 }
-// newest signature still on file (archived forms don't count)
-const lastSigned = c => [...famForms(c).filter(g => g.status==='filed').map(signDate), ...(c.waivers || []).map(w => w.signed || w.at)].filter(Boolean).sort().pop();
+// newest signature still on file (archived forms and scans don't count)
+const lastSigned = c => [...famForms(c).filter(g => g.status==='filed').map(signDate), ...waiverScans(c).map(w => w.signed || w.at)].filter(Boolean).sort().pop();
 const bumpSigned = (c, date) => { if(date && (!c.signed || c.signed < date)) c.signed = date; };
 // after deleting something signed on `date`: if that was the date on file, fall back to the newest one left
 const unSigned = (c, date) => { if(date && c.signed===date){ const d = lastSigned(c); if(d) c.signed = d; else delete c.signed; } };
-const waiverName = (f, pdf) => pdf && f.name.replace(/\.pdf$/i,'').replace(/_+/g,' ').trim() || 'Signed waiver';
-async function addWaivers(c, files){
-  const w = await addFiles('w'+c.id, files, waiverName, () => client(c.id), 'waivers', (o, d) => { d.signed = d.at; bumpSigned(o, d.signed); });
-  if(w && !U.upl) open({t:'waiver', id:c.id, w:w.id}); else quietRender();   // straight to it, to set the date they signed
+const scanName = (f, pdf) => pdf && f.name.replace(/\.pdf$/i,'').replace(/_+/g,' ').trim() || 'Scan';
+async function addScans(c, files){
+  const w = await addFiles('w'+c.id, files, scanName, () => client(c.id), 'waivers', (o, d) => { d.page = 'waiver'; d.signed = d.at; bumpSigned(o, d.signed); });
+  if(w && !U.upl) open({t:'waiver', id:c.id, w:w.id}); else quietRender();   // straight to it, to say what it is
+}
+// an online form's pages, as a short line: Family page, Tucker, Hazel, Waiver
+function formPages(g){
+  const pets = shownPets(g).map(p => p.name), hid = (g.data?.pets || []).length - pets.length;
+  return [g.mode!=='pets' && 'Family page', ...pets, signDate(g) && 'Waiver'].filter(Boolean).join(', ') + (hid ? ' ('+plural(hid, 'page')+' archived)' : '');
 }
 function formRow(g, tag){
-  const pets = g.pets || (g.data?.pets || []).map(p => p.name).join(', ');
   return h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
-    h('span',{class:'grow'}, h('b',{}, g.mode==='pets' ? 'New pet page' : 'Guest form'),
-      h('div',{class:'mut'}, [pets, 'sent '+ymd(formDate(g)), signDate(g) && 'signed'].filter(Boolean).join(' · '))),
+    h('span',{class:'grow'}, h('b',{}, g.mode==='pets' ? 'Pet page' : 'Guest form'),
+      h('div',{}, formPages(g)), h('div',{class:'mut'}, 'Sent '+ymd(formDate(g)))),
     tag && h('span',{class:'pill'}, tag), h('span',{class:'chev'}, '›'));
 }
-function waiverRow(c, w, title){
-  return h('button',{class:'card row', onclick:()=>{ if(docURLs[w.id]?.err) delete docURLs[w.id]; open({t:'waiver', id:c.id, w:w.id}); }},
-    h('span',{class:'grow'}, h('b',{}, title), h('div',{class:'mut'}, 'Paper, scanned · signed '+ymd(w.signed || w.at))), h('span',{class:'chev'}, '›'));
+function waiverRow(c, w, extra){
+  return h('button',{class:'card row', style:'flex:1;min-width:0', onclick:()=>{ if(docURLs[w.id]?.err) delete docURLs[w.id]; open({t:'waiver', id:c.id, w:w.id}); }},
+    h('span',{class:'grow'}, h('b',{}, scanTitle(c, w)), h('div',{class:'mut'}, (w.kind==='pdf' ? 'PDF' : 'Photo')+(scanPage(w)==='waiver' ? ' · signed '+ymd(w.signed || w.at) : ' · added '+ymd(w.at)))),
+    extra && h('span',{class:'pill'}, extra), h('span',{class:'chev'}, '›'));
 }
+const subhead = t => h('div',{class:'mut', style:'font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin:12px 0 6px'}, t);
 function familyForms(c){
-  const {cur, waiver, older} = formsOf(c), up = U.upl && U.upl.pet==='w'+c.id ? U.upl : null, showOld = U.oldf===c.id;
+  const {cur, waiver, scans, older} = formsOf(c), up = U.upl && U.upl.pet==='w'+c.id ? U.upl : null, showOld = U.oldf===c.id;
+  // move a scanned page up one in her order
+  const moveUp = (w, prev) => { const a = c.waivers, i = a.indexOf(w), j = a.indexOf(prev); [a[i], a[j]] = [a[j], a[i]]; commit(); };
   return [
     (n => n > 0 && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'fdiff', id:c.id})},
       h('span',{class:'grow'}, h('b',{}, 'Differs from their guest form'), h('div',{class:'mut'}, plural(n, 'detail')+' here aren’t what their form says. Review')), h('span',{class:'chev'}, '›')))(formDiffs(c).list.length),
-    cur.length ? cur.map(g => formRow(g))
-      : h('p',{class:'mut', style:'margin:4px 0 8px'}, 'No guest form on file. When they fill one out online it shows here. If they did it on paper, add a scan of the signed waiver.'),
-    waiver ? (waiver.w ? waiverRow(c, waiver.w, 'Signed waiver')
-        : h('button',{class:'lk', style:'display:block;padding:0;min-height:36px;text-align:left', onclick:()=>open({t:'gform', id:waiver.g.id})}, 'Waiver signed online, '+ymd(waiver.date)+' ›'))
-      : h('div',{class:'mut', style:'margin:2px 0 8px'}, 'No signed waiver yet.'),
+    subhead('Online'),
+    cur.length ? cur.map(g => formRow(g)) : h('p',{class:'mut', style:'margin:0 0 4px'}, 'Nothing sent online yet.'),
+    subhead('Paper (scanned)'),
+    scans.length ? scans.map((w, i) => h('div',{class:'row', style:'gap:6px;align-items:stretch'}, waiverRow(c, w),
+        scans.length > 1 && h('button',{class:'ic', style:'align-self:center', 'aria-label':'Move '+scanTitle(c, w)+' up', disabled:i===0, onclick:()=>moveUp(w, scans[i-1])}, '↑')))
+      : h('p',{class:'mut', style:'margin:0 0 4px'}, 'No scanned pages. If they filled it out on paper, take a picture of each page.'),
     up && !up.err ? h('p',{class:'mut'}, 'Uploading…')
-      : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned waiver',
-          h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addWaivers(c, [...e.target.files])})),
+      : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned page',
+          h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addScans(c, [...e.target.files])})),
     up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err),
+    h('div',{class:'mut', style:'margin:10px 0 0'}, waiver ? (waiver.w ? 'Signed waiver on file: paper, ' : 'Signed waiver on file: online, ')+ymd(waiver.date)+'.' : 'No signed waiver on file yet.'),
     h('div',{class:'row wrap start', style:'margin-top:8px'},
       (t => t && h('a',{class:'chip', href:t}, cur.length ? 'Text a link to update it' : 'Text them the form link'))(formText(c, cur.length > 0)),
       cur.some(g => g.mode!=='pets')
@@ -1612,26 +1633,33 @@ function familyForms(c){
         : btn(livePets(c).length || c.cell || c.phone ? 'Print a form for them to sign' : 'Print a blank form', ()=>printPaper(familyPaper(c), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')),
     older.length > 0 && [h('button',{class:'lk', style:'display:block;padding:0;min-height:40px;margin-top:6px', 'aria-expanded':showOld, onclick:()=>{ U.oldf = showOld ? null : c.id; render(); }},
         (showOld ? 'Hide older forms' : 'Older forms ('+older.length+')')),
-      showOld && [h('p',{class:'mut', style:'margin:0 0 6px;font-size:13px'}, 'Kept for the record. A newer form or scan moves the old one here on its own.'),
-        older.map(o => o.g ? formRow(o.g, o.g.status==='archived' ? 'Archived' : 'Older') : waiverRow(c, o.w, 'Scanned waiver'))]]
+      showOld && [h('p',{class:'mut', style:'margin:0 0 6px;font-size:13px'}, 'Kept for the record. A newer form or waiver moves the old one here on its own.'),
+        older.map(o => o.g ? formRow(o.g, o.g.status==='archived' ? 'Archived' : 'Older') : waiverRow(c, o.w, o.w.archived ? 'Archived' : 'Older'))]]
   ];
 }
-// a scanned paper waiver
+// a scanned page: what it is, the date signed (for a waiver), archive or delete
 function waiverSheet(u){
   const c = client(u.id), w = c && (c.waivers || []).find(x => x.id===u.w);
   if(!w) return null;
-  const back = () => open({t:'client', id:c.id}), src = docSrc(w);
-  return sheet('Scanned waiver', [
-    field('Name', inp(w.name, v => { if(v.trim()) w.name = v.trim(); save(); quietRender(); }, {autocomplete:'off'})),
-    field('Date they signed it', fieldBtn(ymd(w.signed || w.at), '', ()=>pickDate('Date they signed it', w.signed || w.at, v=>{
-      const was = w.signed || w.at; w.signed = v; unSigned(c, was); bumpSigned(c, v); save(); }))),
-    h('p',{class:'mut', style:'margin-top:0'}, (w.kind==='pdf' ? 'PDF' : 'Photo')+', added '+ymd(w.at)+'. The newest signed waiver is the one on file.'),
+  const back = () => open({t:'client', id:c.id}), src = docSrc(w), pg = scanPage(w), was = () => pg==='waiver' && !w.archived ? (w.signed || w.at) : null;
+  const setPage = v => { const before = was(); w.page = v; if(v!=='pet') delete w.pet; else w.pet ||= livePets(c)[0]?.id;
+    if(v==='waiver'){ w.signed ||= w.at; if(!w.archived) bumpSigned(c, w.signed); } else unSigned(c, before); commit(); };
+  return sheet(scanTitle(c, w), [
+    field('What is it?', h('div',{class:'chips', style:'margin:0'}, SCAN_PAGES.map(([v, l]) => chip(l, pg===v, ()=>setPage(v))))),
+    pg==='pet' && field('Which pet?', h('div',{class:'chips', style:'margin:0'}, c.pets.filter(p => !p.gone || p.id===w.pet).map(p => chip(p.name, w.pet===p.id, ()=>{ w.pet = p.id; commit(); })))),
+    pg==='waiver' && field('Date they signed it', fieldBtn(ymd(w.signed || w.at), '', ()=>pickDate('Date they signed it', w.signed || w.at, v=>{
+      const b = was(); w.signed = v; if(!w.archived){ unSigned(c, b); bumpSigned(c, v); } save(); }))),
+    pg==='other' && field('Name', inp(w.name, v => { if(v.trim()) w.name = v.trim(); save(); quietRender(); }, {autocomplete:'off'})),
+    h('p',{class:'mut', style:'margin-top:0'}, (w.kind==='pdf' ? 'PDF' : 'Photo')+', added '+ymd(w.at)+'.'+(w.archived ? ' Archived.' : pg==='waiver' ? ' The newest signed waiver is the one on file.' : '')),
     src.err ? h('p',{class:'err'}, src.err) : !src.url ? h('p',{class:'mut'},'Loading…')
       : [w.kind==='img' && h('img',{class:'docimg', src:src.url, alt:w.name}),
          h('a',{class:'b2 sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:src.url, target:'_blank', rel:'noopener'}, w.kind==='pdf' ? 'Open PDF' : 'Open full size')],
-    h('div',{style:'margin:24px 0 8px'}, btn('Delete this scan', ()=>confirmSheet('Delete this scan?',
-      'Only if it was added by mistake, like the wrong family or the wrong file. A signed waiver is worth keeping: when they sign a new one, this moves to Older forms on its own.', 'Delete', ()=>{
-        const was = w.signed || w.at; c.waivers = c.waivers.filter(x => x!==w); if(!c.waivers.length) delete c.waivers; unSigned(c, was); U.sh = {t:'client', id:c.id}; }, u), 'lk bad'))
+    h('div',{style:'margin:24px 0 8px'},
+      btn(w.archived ? 'Bring it back' : 'Archive this page', ()=>{ if(w.archived){ delete w.archived; if(pg==='waiver') bumpSigned(c, w.signed || w.at); } else { const b = was(); w.archived = today(); unSigned(c, b); }
+        commit(); toast(w.archived ? 'Archived. It’s under Older forms.' : 'Brought back.'); }, 'lk'),
+      h('div',{style:'margin-top:14px'}, btn('Delete for good', ()=>confirmSheet('Delete this page for good?',
+        'Only if it was added by mistake, like the wrong family or the wrong file. This can’t be undone.'+(pg==='waiver' ? ' A signed waiver is worth keeping: archive it instead.' : ''), 'Delete for good', ()=>{
+          const b = was(); c.waivers = c.waivers.filter(x => x!==w); if(!c.waivers.length) delete c.waivers; unSigned(c, b); U.sh = {t:'client', id:c.id}; }, u), 'lk bad')))
   ], btn('Done', back), back);
 }
 /* ---------- duplicate families ----------
@@ -2652,7 +2680,7 @@ const dobText = v => /^\d{4}-\d\d-\d\d$/.test(v||'') ? ymd(v)+' ('+ageOf(v)+')' 
 // their current form as they sent it (signed), with pages for pets they added later
 function currentPaper(cur){
   const full = cur.find(g => g.mode!=='pets'), d = paperData(full), pets = new Map();
-  [full, ...cur.filter(g => g!==full)].forEach(g => (g.data?.pets || []).forEach(p => pets.set(lc(p.name), p)));
+  [full, ...cur.filter(g => g!==full)].forEach(g => shownPets(g).forEach(p => pets.set(lc(p.name), p)));
   return {...d, pets:[...pets.values()]};
 }
 // the paper form filled in with what's on file, for a family that would rather do it on paper (they check it and sign)
@@ -2700,6 +2728,23 @@ function moveFormPick(g){
     onPick: id => ask(id, 'the '+client(id).name+' family'),
     action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => ask('new', 'a new '+(O.last || lastName(g.name))+' family')}});
 }
+// archive (hide) or bring back one pet's page of a filed online form; the form itself stays as sent
+function pageHide(g, p, hide){
+  const c = client(g.client_id); if(!c) return;
+  const H = (c.formHide ||= {}), list = new Set(H[g.id] || []), nm = lc(p.name);
+  hide ? list.add(nm) : list.delete(nm);
+  if(list.size) H[g.id] = [...list]; else delete H[g.id];
+  if(!Object.keys(H).length) delete c.formHide;
+  commit(); if(hide) toast((p.name || 'That')+'’s page is archived.');
+}
+// delete one pet's page from the form for good (only once archived)
+function pageDelete(g, p){
+  const data = {...g.data, pets:(g.data?.pets || []).filter(x => x!==p)};
+  saveForm(g, {data, pets:data.pets.map(x => (x.name || '').trim()).filter(Boolean).join(', ')});
+  pageHide(g, p, false); U.sh = {t:'gform', id:g.id};
+}
+// the form screen's title: what came in, or whose form it is once filed
+const gfTitle = g => g.status==='new' ? gfKind(g) : gfName(g)+'’s '+(g.mode==='pets' ? 'pet page' : 'guest form');
 function formSheet(u){
   const g = G.list.find(x => x.id===u.id); if(!g) return null;
   const d = g.data || {}, O = d.owner || {}, arch = g.status==='archived', filed = g.status==='filed' || arch, fc0 = filed && client(g.client_id);
@@ -2714,7 +2759,7 @@ function formSheet(u){
     onPick: id => { u.fam = id; u.how = ''; },
     action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
   const sp = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Small mammal') : 'Dog';
-  return sheet(gfKind(g), [
+  return sheet(gfTitle(g), [
     filed && h('div',{class:arch ? 'warn' : 'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
       h('div',{}, arch ? 'Archived: kept for the record, but not compared with the family.' : isCur ? 'This is their current form.' : 'A newer form replaced this one. It’s kept under Older forms.'),
       !arch && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>moveFormPick(g)}, 'Wrong family? Move it')),
@@ -2736,7 +2781,11 @@ function formSheet(u){
     (O.coName || O.emName || O.vet || O.pickupBy) && [h('div',{class:'sec'}, 'Contacts'), h('div',{class:'card'},
       line('Co-owner', join(O.coName, O.coMain, O.coAlt)), line('Emergency', join(O.emName, O.emMain, O.emAlt)),
       line('Vet', join(O.vet, O.vetPhone)), line('May pick up', O.pickupBy))],
-    (d.pets || []).map(p => [h('div',{class:'sec'}, (p.name || 'Pet')+' · '+sp(p)), h('div',{class:'card'},
+    (d.pets || []).map(p => hiddenOf(g).includes(lc(p.name)) ? [h('div',{class:'sec'}, (p.name || 'Pet')+' · archived page'),
+      h('div',{class:'card'}, h('div',{class:'mut'}, 'Left out of their form, the paper view and printing.'),
+        h('div',{class:'row start'}, btn('Bring it back', ()=>pageHide(g, p, false), 'lk'),
+          btn('Delete this page', ()=>confirmSheet('Delete '+(p.name || 'this pet')+'’s page for good?', 'Takes it out of the form they sent. This can’t be undone.', 'Delete for good', ()=>pageDelete(g, p), {t:'gform', id:g.id}), 'lk bad')))]
+      : [h('div',{class:'sec'}, (p.name || 'Pet')+' · '+sp(p), fc0 && !arch && h('button',{class:'lk', style:'margin-left:auto;padding:0;min-height:28px;font-size:13px;text-transform:none;letter-spacing:0', onclick:()=>pageHide(g, p, true)}, 'Archive page')), h('div',{class:'card'},
       line('Breed', p.breed), line('Color', p.color), line('Born', dobText(p.dob)),
       line('Sex', join(p.sex==='m' ? 'Male' : p.sex==='f' ? 'Female' : '', p.fixed==='yes' ? (p.sex==='f' ? 'Spayed' : 'Neutered') : p.fixed==='no' ? 'Not fixed' : '')),
       line('Conditions', p.conditions),
@@ -2753,8 +2802,8 @@ function formSheet(u){
       // new: delete (spam, a test, sent twice). filed: archive only. archived: unarchive, or delete with a warning
       !filed ? btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. For spam, a test, or one sent twice. This can’t be undone.', 'Delete', ()=>{
         saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad')
-      : !arch ? btn('Archive', ()=>{ saveForm(g, {status:'archived'}); toast('Archived. It’s under Older forms on the family.'); render(); }, 'lk')
-      : [btn('Unarchive', ()=>{ saveForm(g, {status:'filed'}); render(); }, 'lk'),
+      : !arch ? btn('Archive', ()=>{ saveForm(g, {status:'archived'}); if(fc0){ unSigned(fc0, signDate(g)); save(); } toast('Archived. It’s under Older forms on the family.'); render(); }, 'lk')
+      : [btn('Unarchive', ()=>{ saveForm(g, {status:'filed'}); if(fc0){ bumpSigned(fc0, signDate(g)); save(); } render(); }, 'lk'),
          btn('Delete for good', ()=>confirmSheet('Delete this form for good?', 'Only if it was filed by mistake or isn’t theirs. It has their answers'+(signDate(g) ? ' and signed waiver' : '')+', and it can’t be brought back. Anything already filled in on the family stays.', 'Delete for good', ()=>{
            saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); if(fc0){ unSigned(fc0, signDate(g)); U.sh = {t:'client', id:fc0.id}; } }, {t:'gform', id:g.id}), 'lk bad')])
   ], filed ? btn('Done', close) : [btn('Not now', close, 'b2'), btn('File it', ()=>fileForm(g, u.fam))]);
@@ -2798,7 +2847,7 @@ const loadPaper = () => {
   paperJs ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = SITE_URL+'guest-paper.js'; sc.onload = ok; sc.onerror = () => { paperJs = null; no(); }; document.head.append(sc); });
   return paperJs.then(() => { if(!paperCss){ paperCss = true; document.head.append(h('link',{rel:'stylesheet', href:GUEST_FONTS}), h('style',{}, guestPaperCSS)); } });
 };
-const paperData = g => ({...g.data, date:g.data?.sign?.date || formDate(g)});
+const paperData = g => ({...g.data, pets:shownPets(g), date:g.data?.sign?.date || formDate(g)});
 // the form as they'd see it on paper, inside the sheet (read only)
 function paperView(g){
   const box = h('div',{class:'gpview', style:'margin:10px -4px 0'}, h('p',{class:'mut'}, 'Loading the paper form…'));
