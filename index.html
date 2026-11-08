@@ -1607,7 +1607,9 @@ function familyForms(c){
     up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err),
     h('div',{class:'row wrap start', style:'margin-top:8px'},
       (t => t && h('a',{class:'chip', href:t}, cur.length ? 'Text a link to update it' : 'Text them the form link'))(formText(c, cur.length > 0)),
-      btn(livePets(c).length || c.cell || c.phone ? 'Print it with their info' : 'Print a blank form', ()=>printPaper(familyPaper(c), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')),
+      cur.some(g => g.mode!=='pets')
+        ? btn('Print their form', ()=>printPaper(currentPaper(cur), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')
+        : btn(livePets(c).length || c.cell || c.phone ? 'Print a form for them to sign' : 'Print a blank form', ()=>printPaper(familyPaper(c), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')),
     older.length > 0 && [h('button',{class:'lk', style:'display:block;padding:0;min-height:40px;margin-top:6px', 'aria-expanded':showOld, onclick:()=>{ U.oldf = showOld ? null : c.id; render(); }},
         (showOld ? 'Hide older forms' : 'Older forms ('+older.length+')')),
       showOld && [h('p',{class:'mut', style:'margin:0 0 6px;font-size:13px'}, 'Kept for the record. A newer form or scan moves the old one here on its own.'),
@@ -1669,7 +1671,19 @@ function mergeKeeper(cs){
   return cs.reduce((a, b) => score(b) > score(a) ? b : a);
 }
 const PHONE_KEYS = ['cell', 'phone', 'work'];
-function mergeFamilies(ids){
+// the details that differ between families being merged, each with the different answers to pick from
+function mergeDiffs(cs){
+  const out = [], label = k => (FAM_FIELDS.find(f => f[0]===k) || [, k])[1];
+  const add = (key, lab, k, vals) => { const seen = new Map();
+    vals.forEach(([v, c]) => { const n = normV(v); if(!n) return; if(!seen.has(n)) seen.set(n, {v, fams:[c]}); else seen.get(n).fams.push(c); });
+    if(seen.size > 1) out.push({key, label:lab, k, opts:[...seen.values()]}); };
+  for(const k in CLIENT_DEF){ if(PHONE_KEYS.includes(k) || k==='notes' || k==='signed') continue; add('c.'+k, label(k), k, cs.map(c => [c[k], c])); }
+  const pets = {}; cs.forEach(c => c.pets.forEach(p => (pets[lc(p.name)+'|'+p.species] ||= []).push([p, c])));
+  for(const [gk, list] of Object.entries(pets)) if(list.length > 1)
+    PET_FIELDS.forEach(([k, lab]) => add('p.'+gk+'.'+k, list[0][0].name+': '+lab.toLowerCase(), k, list.map(([p, c]) => [p[k], c])));
+  return out;
+}
+function mergeFamilies(ids, picks = {}){
   const cs = ids.map(client).filter(Boolean); if(cs.length < 2) return;
   const keep = mergeKeeper(cs), others = cs.filter(c => c!==keep), notes = [];
   const label = k => (FAM_FIELDS.find(f => f[0]===k) || [, k])[1];
@@ -1679,7 +1693,7 @@ function mergeFamilies(ids){
       const slot = PHONE_KEYS.find(k => !keep[k]); if(slot) keep[slot] = fmtPhone(ph); else notes.push('Phone: '+fmtPhone(ph)); });
     for(const k in CLIENT_DEF){ if(PHONE_KEYS.includes(k) || k==='notes' || k==='signed') continue;
       const v = o[k]; if(!String(v || '').trim()) continue;
-      if(!String(keep[k] || '').trim()) keep[k] = v; else if(lc(keep[k])!==lc(v)) notes.push(label(k)+': '+v); }
+      if(!String(keep[k] || '').trim()) keep[k] = v; else if(lc(keep[k])!==lc(v) && !(('c.'+k) in picks)) notes.push(label(k)+': '+v); }
     if(o.notes && !(keep.notes || '').includes(o.notes)) notes.push(o.notes);
     if(o.signed && (!keep.signed || keep.signed < o.signed)) keep.signed = o.signed;
     if(o.formUpdate) keep.formUpdate = true;
@@ -1709,6 +1723,10 @@ function mergeFamilies(ids){
     }
     G.list.filter(g => g.client_id===o.id).forEach(g => saveForm(g, {client_id:keep.id}));
   }
+  // what she chose for each difference
+  for(const key in picks){ const v = picks[key], val = Array.isArray(v) ? [...v] : v;
+    if(key.startsWith('c.')) keep[key.slice(2)] = val;
+    else { const [, gk, k] = /^p\.(.+)\.(\w+)$/.exec(key) || []; const kp = gk && keep.pets.find(x => lc(x.name)+'|'+x.species===gk); if(kp) kp[k] = val; } }
   if(notes.length) keep.notes = [keep.notes, 'From the merge: '+notes.join('; ')].filter(Boolean).join('\n');
   if(others.every(o => !o.archived) || !keep.archived) delete keep.archived;
   S.clients = S.clients.filter(c => !others.includes(c));
@@ -1724,7 +1742,10 @@ function mergeSheet(u){
   const cs = u.ids.map(client).filter(Boolean);
   const back = () => u.back ? open(u.back) : close();
   if(cs.length < 2) return sheet('Same family?', h('p',{}, 'Nothing left to merge.'), btn('Done', back), back);
-  const keep = mergeKeeper(cs);
+  const keep = mergeKeeper(cs), diffs = mergeDiffs(cs), many = cs.length > 2;
+  const pick = u.pick ||= {};
+  diffs.forEach(d => { if(!(d.key in pick) || !d.opts.some(o => normV(o.v)===normV(pick[d.key]))) pick[d.key] = (d.opts.find(o => o.fams.includes(keep)) || d.opts[0]).v; });
+  const famLabel = c => c===keep ? 'kept family' : many ? (c.first ? c.first+' ' : '')+c.name+(c.cell || c.phone ? ', '+(c.cell || c.phone) : '') : 'other family';
   const notSame = c => { const rest = cs.filter(x => x!==c);
     c.notSame = [...new Set([...(c.notSame || []), ...rest.map(x => x.id)])]; u.ids = rest.map(x => x.id); commit(); };
   const famCard = c => { const st = famStays(c).length, nf = famForms(c).length;
@@ -1737,10 +1758,16 @@ function mergeSheet(u){
   return sheet('Same family?', [
     h('p',{class:'mut', style:'margin-top:0'}, u.why ? cs.length+' families look like the same people ('+u.why+').' : 'Check these are the same people before you merge them.'),
     cs.map(famCard),
+    diffs.length > 0 && [h('div',{class:'sec'}, 'Differences ('+diffs.length+')'),
+      h('p',{class:'mut', style:'margin-top:0'}, 'Pick which to keep for each. The kept family’s is picked to start.'),
+      diffs.map(d => h('div',{class:'card'}, h('b',{}, d.label),
+        h('div',{style:'display:flex;flex-direction:column;gap:6px;margin-top:6px'}, d.opts.map(o => { const on = normV(pick[d.key])===normV(o.v);
+          return h('button',{class:'pitem'+(on ? ' on' : ''), 'aria-pressed':on, style:'text-align:left'+(on ? ';border:1px solid var(--pri)' : ''), onclick:()=>{ pick[d.key] = o.v; render(); }},
+            h('div',{class:'grow'}, h('div',{class:'t'}, (on ? '✓ ' : '')+showV(d.k, o.v)), h('div',{class:'s'}, o.fams.map(famLabel).join(', ')))); }))))],
     h('div',{class:'card', style:'margin-top:12px'}, h('b',{}, 'Merging them'),
       h('div',{}, 'Keeps the '+keep.name+' family (the most stays) and moves everything else onto it: pets, stays, records, guest forms and waivers.'),
-      h('div',{class:'mut'}, 'Pets with the same name become one. Details it’s missing are filled in from the others; anything that differs goes in its notes.'))
-  ], [btn('Cancel', back, 'b2'), btn('Merge '+cs.length+' families', ()=>mergeFamilies(cs.map(c => c.id)))], back);
+      h('div',{class:'mut'}, 'Pets with the same name become one. Details it’s missing are filled in from the others'+(diffs.length ? ', and the differences use what you picked above.' : '.')))
+  ], [btn('Cancel', back, 'b2'), btn('Merge '+cs.length+' families', ()=>mergeFamilies(cs.map(c => c.id), Object.fromEntries(diffs.map(d => [d.key, pick[d.key]]))))], back);
 }
 function mergeWithPick(c, u){
   pickList({title:'Merge with which family?', search:'Search family, pet or phone', focus:true,
@@ -2622,6 +2649,12 @@ function formCard(g){
 }
 const yesNoText = v => v==='yes' ? 'Yes' : v==='no' ? 'No' : '';
 const dobText = v => /^\d{4}-\d\d-\d\d$/.test(v||'') ? ymd(v)+' ('+ageOf(v)+')' : v || '';
+// their current form as they sent it (signed), with pages for pets they added later
+function currentPaper(cur){
+  const full = cur.find(g => g.mode!=='pets'), d = paperData(full), pets = new Map();
+  [full, ...cur.filter(g => g!==full)].forEach(g => (g.data?.pets || []).forEach(p => pets.set(lc(p.name), p)));
+  return {...d, pets:[...pets.values()]};
+}
 // the paper form filled in with what's on file, for a family that would rather do it on paper (they check it and sign)
 function familyPaper(c){
   const owner = {}; FAM_FIELDS.forEach(([k, , fk]) => { if(c[k]) owner[fk] = c[k]; });
