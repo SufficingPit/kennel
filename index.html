@@ -2250,7 +2250,7 @@ function reqsView(){
       !S.book.on && h('div',{class:'warn'},'Online requests are turned off. Turn them on in Settings, Online booking.'),
       R.err && h('p',{class:'err'}, R.err),
       toText().length > 0 && [h('div',{class:'sec'},'Texts to send'), toText().map(textCard)],
-      gNew().length > 0 && [h('div',{class:'sec'},'New guest forms'), gNew().map(formCard)],
+      gNew().length > 0 && [h('div',{class:'sec'},'Guest forms to file'), gNew().map(formCard)],
       wait.length ? [h('div',{class:'sec'},'Waiting for you'), wait.map(reqCard)]
         : !toText().length && !gNew().length && h('p',{class:'empty', style:'padding-top:40px'}, R.loaded || DEMO ? 'No requests waiting.' : 'Loading…'),
       done.length > 0 && [h('div',{class:'sec'},'Answered'), done.map(reqCard)])];
@@ -2495,7 +2495,7 @@ function reqFormLine(r, fc){
   const newPhone = fc && !allPhones(fc).some(x => x.slice(-10)===r.phone.replace(/\D/g,'').slice(-10));
   const onFile = fc && fc.signed && (!newPhone || newPets.length < r.pets.length);
   const sentByPhone = G.list.some(x => x.status==='new' && (x.phone || '').replace(/\D/g,'').slice(-10)===r.phone.replace(/\D/g,'').slice(-10));
-  if(sentByPhone) return [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, 'They sent a guest form from this phone. It’s waiting under New guest forms.')];
+  if(sentByPhone) return [h('div',{class:'sec'},'Guest form'), h('div',{class:'card'}, 'They sent a guest form from this phone. It’s waiting under Guest forms to file.')];
   const want = !onFile ? 'The website asked them for a new guest form.' : fc.formUpdate ? 'The website asked them to update their guest form.'
     : newPhone ? 'Their phone is new, so the website asked them to update their guest form.'
     : newPets.length ? 'The website asked them for a page for '+petList(newPets)+'.' : '';
