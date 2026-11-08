@@ -61,7 +61,10 @@ function requestMsg(p: Record<string, any>) {
 }
 function formMsg(p: Record<string, any>) {
   const o = p.data?.owner || {}, pets = (p.data?.pets || []) as { name: string }[];
-  return { title: "New guest form: " + (String(o.first || "") + " " + String(o.last || "")).trim(), body: pets.map((x) => String(x.name || "").trim()).join(", "), tag: "form-" };
+  const who = (String(o.first || "") + " " + String(o.last || "")).trim(), names = pets.map((x) => String(x.name || "").trim()).filter(Boolean).join(", ");
+  const mode = p.data?.mode;   // new | pets (a family she has, adding pets) | update
+  const title = mode === "pets" ? "New pet page: " + names : mode === "update" ? "Updated guest form: " + who : "New guest form: " + who;
+  return { title, body: mode === "pets" ? "From " + who : names, tag: "form-" };
 }
 async function notify(url: string, key: string, m: { title: string; body: string; tag: string }) {
   const priv = Deno.env.get("VAPID_PRIVATE");
