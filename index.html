@@ -1640,7 +1640,8 @@ function clientSheet(u){
     !isNew && familyForms(c),
     field('Waiver signed', h('div',{class:'row'},
       fieldBtn(c.signed && ymd(c.signed), 'Not signed', ()=>pickDate('Waiver signed', c.signed, v=>{ c.signed=v; if(!isNew) save(); })),
-      !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
+      !c.signed ? btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2')
+        : btn('Clear', ()=>{ delete c.signed; if(isNew) render(); else { commit(); toast('Cleared. The website will ask them for the form again.'); } }, 'b2'))),
     h('div',{class:'mut', style:'font-size:13px;margin-top:-4px'}, 'Fills in on its own from their online form or a scan. With a date here, the website won’t ask them for the form again.'),
     !isNew && (c.formUpdate
       ? h('div',{class:'card', style:'margin-top:8px'}, h('b',{}, 'Asked to update their guest form'),
