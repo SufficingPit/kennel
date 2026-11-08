@@ -11,10 +11,13 @@ create table if not exists public.guest_forms (
   phone       text not null,
   pets        text not null default '',           -- pet names, for the list
   data        jsonb not null,                     -- everything they filled in (see guest-form.html)
-  status      text not null default 'new' check (status in ('new','filed','deleted')),
+  status      text not null default 'new' check (status in ('new','filed','archived','deleted')),
   client_id   text,                               -- the family it was filed onto
   filed_at    timestamptz
 );
+-- filed forms can be archived (put away, still kept); only new or archived ones get deleted
+alter table public.guest_forms drop constraint if exists guest_forms_status_check;
+alter table public.guest_forms add constraint guest_forms_status_check check (status in ('new','filed','archived','deleted'));
 create index if not exists guest_forms_status on public.guest_forms (status, created_at desc);
 
 revoke all on public.guest_forms from anon, authenticated, service_role;

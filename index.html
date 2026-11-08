@@ -1473,7 +1473,7 @@ function formSays(c){
     FAM_FIELDS.forEach(([, , fk]) => put(own, fk, O[fk]));
     (d.pets || []).forEach(fp => { const nm = (fp.name || '').trim().toLowerCase(); if(!nm) return; const P = pets[nm] ||= {};
       PET_FIELDS.forEach(([k]) => put(P, k, k==='personality' ? (fp[k] || []).slice(0, 1) : fp[k])); }); });
-  return {date:forms[forms.length-1].created_at.slice(0, 10), own, pets};
+  return {date:formDate(forms[forms.length-1]), own, pets};
 }
 function formDiffs(c){
   const f = formSays(c); if(!f) return {list:[], date:null};
@@ -1498,6 +1498,86 @@ function formDiffSheet(u){
       h('div',{}, h('span',{class:'mut'}, 'Here: '), d.now || '(blank)'), h('div',{}, h('span',{class:'mut'}, 'Their form: '), d.form),
       h('div',{class:'row start', style:'margin-top:6px'}, btn('Use form’s', ()=>useForm(d), 'chip'), btn('Keep mine', ()=>keepMine(d), 'lk'))))
       : h('p',{}, 'Everything matches their guest form now.')
+  ], btn('Done', back), back);
+}
+/* ---------- a family's forms ----------
+   Two kinds: guest forms sent online (guest_forms table, filed onto the family) and scans of
+   paper waivers (c.waivers, files in the docs bucket). Nothing signed goes away by itself:
+   a newer form or scan moves the older one to "Older forms", a filed form can be archived but
+   not deleted, and only an archived form or a scan added by mistake can be deleted, with a warning.
+   c.signed (the date their waiver was signed) is what the website checks to skip the form. */
+const famForms = c => G.list.filter(g => g.client_id===c.id && (g.status==='filed' || g.status==='archived'));
+const newestFirst = (a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+const formDate = g => fmt(new Date(g.created_at));   // the local day it was sent
+const signDate = g => g.data?.sign?.name ? (g.data.sign.date || formDate(g)) : null;
+function formsOf(c){
+  const all = famForms(c).sort((a, b) => a.created_at < b.created_at ? 1 : -1), live = all.filter(g => g.status==='filed');
+  // current: their newest whole form, plus pet pages sent after it
+  const full = live.find(g => g.mode!=='pets');
+  const cur = full ? [full, ...live.filter(g => g.mode==='pets' && g.created_at > full.created_at)] : live.filter(g => g.mode==='pets');
+  const signs = [...(c.waivers || []).map(w => ({w, date:w.signed || w.at})), ...live.filter(signDate).map(g => ({g, date:signDate(g)}))].sort(newestFirst);   // a scan wins a same-day tie
+  const waiver = signs[0] || null;
+  const older = [...all.filter(g => !cur.includes(g)).map(g => ({g, date:formDate(g)})),
+    ...(c.waivers || []).filter(w => w!==waiver?.w).map(w => ({w, date:w.signed || w.at}))].sort(newestFirst);
+  return {cur, waiver, older};
+}
+// newest signature still on file (archived forms don't count)
+const lastSigned = c => [...famForms(c).filter(g => g.status==='filed').map(signDate), ...(c.waivers || []).map(w => w.signed || w.at)].filter(Boolean).sort().pop();
+const bumpSigned = (c, date) => { if(date && (!c.signed || c.signed < date)) c.signed = date; };
+// after deleting something signed on `date`: if that was the date on file, fall back to the newest one left
+const unSigned = (c, date) => { if(date && c.signed===date){ const d = lastSigned(c); if(d) c.signed = d; else delete c.signed; } };
+const waiverName = (f, pdf) => pdf && f.name.replace(/\.pdf$/i,'').replace(/_+/g,' ').trim() || 'Signed waiver';
+async function addWaivers(c, files){
+  const w = await addFiles('w'+c.id, files, waiverName, () => client(c.id), 'waivers', (o, d) => { d.signed = d.at; bumpSigned(o, d.signed); });
+  if(w && !U.upl) open({t:'waiver', id:c.id, w:w.id}); else quietRender();   // straight to it, to set the date they signed
+}
+function formRow(g, tag){
+  const pets = g.pets || (g.data?.pets || []).map(p => p.name).join(', ');
+  return h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
+    h('span',{class:'grow'}, h('b',{}, g.mode==='pets' ? 'New pet page' : 'Guest form'),
+      h('div',{class:'mut'}, [pets, 'sent '+ymd(formDate(g)), signDate(g) && 'signed'].filter(Boolean).join(' · '))),
+    tag && h('span',{class:'pill'}, tag), h('span',{class:'chev'}, '›'));
+}
+function waiverRow(c, w, title){
+  return h('button',{class:'card row', onclick:()=>{ if(docURLs[w.id]?.err) delete docURLs[w.id]; open({t:'waiver', id:c.id, w:w.id}); }},
+    h('span',{class:'grow'}, h('b',{}, title), h('div',{class:'mut'}, 'Paper, scanned · signed '+ymd(w.signed || w.at))), h('span',{class:'chev'}, '›'));
+}
+function familyForms(c){
+  const {cur, waiver, older} = formsOf(c), up = U.upl && U.upl.pet==='w'+c.id ? U.upl : null, showOld = U.oldf===c.id;
+  return [
+    (n => n > 0 && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'fdiff', id:c.id})},
+      h('span',{class:'grow'}, h('b',{}, 'Differs from their guest form'), h('div',{class:'mut'}, plural(n, 'detail')+' here aren’t what their form says. Review')), h('span',{class:'chev'}, '›')))(formDiffs(c).list.length),
+    cur.length ? cur.map(g => formRow(g))
+      : h('p',{class:'mut', style:'margin:4px 0 8px'}, 'No guest form on file. When they fill one out online it shows here. If they did it on paper, add a scan of the signed waiver.'),
+    waiver ? (waiver.w ? waiverRow(c, waiver.w, 'Signed waiver')
+        : h('div',{class:'mut', style:'margin:2px 0 8px'}, 'Waiver signed online on their guest form, '+ymd(waiver.date)+'.'))
+      : h('div',{class:'mut', style:'margin:2px 0 8px'}, 'No signed waiver yet.'),
+    up && !up.err ? h('p',{class:'mut'}, 'Uploading…')
+      : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned waiver',
+          h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addWaivers(c, [...e.target.files])})),
+    up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err),
+    older.length > 0 && [h('button',{class:'lk', style:'display:block;padding:0;min-height:40px;margin-top:6px', 'aria-expanded':showOld, onclick:()=>{ U.oldf = showOld ? null : c.id; render(); }},
+        (showOld ? 'Hide older forms' : 'Older forms ('+older.length+')')),
+      showOld && [h('p',{class:'mut', style:'margin:0 0 6px;font-size:13px'}, 'Kept for the record. A newer form or scan moves the old one here on its own.'),
+        older.map(o => o.g ? formRow(o.g, o.g.status==='archived' ? 'Archived' : 'Older') : waiverRow(c, o.w, 'Scanned waiver'))]]
+  ];
+}
+// a scanned paper waiver
+function waiverSheet(u){
+  const c = client(u.id), w = c && (c.waivers || []).find(x => x.id===u.w);
+  if(!w) return null;
+  const back = () => open({t:'client', id:c.id}), src = docSrc(w);
+  return sheet('Scanned waiver', [
+    field('Name', inp(w.name, v => { if(v.trim()) w.name = v.trim(); save(); quietRender(); }, {autocomplete:'off'})),
+    field('Date they signed it', fieldBtn(ymd(w.signed || w.at), '', ()=>pickDate('Date they signed it', w.signed || w.at, v=>{
+      const was = w.signed || w.at; w.signed = v; unSigned(c, was); bumpSigned(c, v); save(); }))),
+    h('p',{class:'mut', style:'margin-top:0'}, (w.kind==='pdf' ? 'PDF' : 'Photo')+', added '+ymd(w.at)+'. The newest signed waiver is the one on file.'),
+    src.err ? h('p',{class:'err'}, src.err) : !src.url ? h('p',{class:'mut'},'Loading…')
+      : [w.kind==='img' && h('img',{class:'docimg', src:src.url, alt:w.name}),
+         h('a',{class:'b2 sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:src.url, target:'_blank', rel:'noopener'}, w.kind==='pdf' ? 'Open PDF' : 'Open full size')],
+    h('div',{style:'margin:24px 0 8px'}, btn('Delete this scan', ()=>confirmSheet('Delete this scan?',
+      'Only if it was added by mistake, like the wrong family or the wrong file. A signed waiver is worth keeping: when they sign a new one, this moves to Older forms on its own.', 'Delete', ()=>{
+        const was = w.signed || w.at; c.waivers = c.waivers.filter(x => x!==w); if(!c.waivers.length) delete c.waivers; unSigned(c, was); U.sh = {t:'client', id:c.id}; }, u), 'lk bad'))
   ], btn('Done', back), back);
 }
 function clientSheet(u){
@@ -1553,14 +1633,12 @@ function clientSheet(u){
     h('div',{style:'width:50%;padding-right:5px'}, tf(c,'vetPhone','Phone',sv,{type:'tel'})),
     h('div',{class:'sec'},'Who else may pick up'),
     tf(c,'pickupBy','Names',sv,{ph:'Besides the owners'}),
-    h('div',{class:'sec'},'Waiver'),
-    !isNew && (n => n > 0 && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'fdiff', id:c.id})},
-      h('span',{class:'grow'}, h('b',{}, 'Differs from their guest form'), h('div',{class:'mut'}, plural(n, 'detail')+' here aren’t what their form says. Review')), h('span',{class:'chev'}, '›')))(formDiffs(c).list.length),
-    !isNew && G.list.filter(g => g.client_id===c.id).map(g => h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
-      h('span',{class:'grow'}, h('b',{}, 'Guest form'), h('div',{class:'mut'}, (g.pets || '')+' · sent '+ymd(g.created_at.slice(0,10)))), h('span',{class:'chev'}, '›'))),
-    field('Date signed', h('div',{class:'row'},
+    h('div',{class:'sec'}, isNew ? 'Waiver' : 'Forms'),
+    !isNew && familyForms(c),
+    field('Waiver signed', h('div',{class:'row'},
       fieldBtn(c.signed && ymd(c.signed), 'Not signed', ()=>pickDate('Waiver signed', c.signed, v=>{ c.signed=v; if(!isNew) save(); })),
       !c.signed && btn('Today', ()=>{ c.signed=today(); isNew ? render() : commit(); }, 'b2'))),
+    h('div',{class:'mut', style:'font-size:13px;margin-top:-4px'}, 'Fills in on its own from their online form or a scan. With a date here, the website won’t ask them for the form again.'),
     !isNew && (c.formUpdate
       ? h('div',{class:'card', style:'margin-top:8px'}, h('b',{}, 'Asked to update their guest form'),
           h('div',{class:'mut'}, 'Next time they request a stay online, the website asks them to look over their form and send it again.'),
@@ -2349,7 +2427,7 @@ async function loadForms(){
   if(DEMO){ G = {list:(S.gforms || []).filter(g => g.status!=='deleted'), loaded:true}; return; }
   if(!synced() || Y.session.dead) return;
   try {
-    const list = await api('/rest/v1/guest_forms?select=*&status=neq.deleted&order=created_at.desc&limit=300');
+    const list = await api('/rest/v1/guest_forms?select=*&status=neq.deleted&order=created_at.desc&limit=1000');
     const before = JSON.stringify(G.list);
     G = {list, loaded:true};
     if(JSON.stringify(list) !== before) quietRender();
@@ -2374,7 +2452,8 @@ const yesNoText = v => v==='yes' ? 'Yes' : v==='no' ? 'No' : '';
 const dobText = v => /^\d{4}-\d\d-\d\d$/.test(v||'') ? ymd(v)+' ('+ageOf(v)+')' : v || '';
 function formSheet(u){
   const g = G.list.find(x => x.id===u.id); if(!g) return null;
-  const d = g.data || {}, O = d.owner || {}, filed = g.status==='filed', fc0 = filed && client(g.client_id);
+  const d = g.data || {}, O = d.owner || {}, arch = g.status==='archived', filed = g.status==='filed' || arch, fc0 = filed && client(g.client_id);
+  const isCur = fc0 && !arch && formsOf(fc0).cur.includes(g);
   if(u.fam===undefined){ const m = guessFamily({name:gfName(g), phone:g.phone || '', pets:(d.pets || []).map(p => ({name:p.name || ''}))});
     u.fam = m ? m.c.id : 'new'; u.how = m ? m.how : ''; }
   const fc = u.fam!=='new' && client(u.fam);
@@ -2386,7 +2465,8 @@ function formSheet(u){
     action: {label: () => '+ New family “'+(O.last || lastName(g.name))+'”', fn: () => { u.fam = 'new'; u.how = ''; closePick(); }}});
   const sp = p => p.species==='cat' ? 'Cat' : p.species==='other' ? (p.other || 'Small mammal') : 'Dog';
   return sheet(gfKind(g), [
-    filed && h('div',{class:'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
+    filed && h('div',{class:arch ? 'warn' : 'ok', style:'margin-top:0'}, 'Filed '+ago(g.filed_at)+(fc0 ? ' on the '+fc0.name+' family.' : '.'),
+      h('div',{}, arch ? 'Archived: kept for the record, but not compared with the family.' : isCur ? 'This is their current form.' : 'A newer form replaced this one. It’s kept under Older forms.'),
       fc0 && h('div',{}, h('button',{class:'lk', style:'padding:0;min-height:32px', onclick:()=>open({t:'client', id:fc0.id})}, 'Open the '+fc0.name+' family ›'))),
     (rq => rq && h('button',{class:'card row', style:'margin-top:4px', onclick:()=>open({t:'req', id:rq.id})},
       h('span',{class:'grow'}, h('b',{}, 'Sent with their stay request'), h('div',{class:'mut'}, md(rq.start_date)+' – '+md(rq.end_date)+' · '+rq.pets.map(p => p.name).join(', '))), h('span',{class:'chev'}, '›')))
@@ -2418,9 +2498,14 @@ function formSheet(u){
     h('div',{class:'sec'}, 'Waiver'),
     h('div',{class:'card'}, d.sign ? 'Agreed and signed by '+(d.sign.name || '')+(d.sign.date ? ', '+ymd(d.sign.date) : '') : 'Not signed',
       d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'}))],
-    h('div',{class:'row', style:'margin:22px 0 8px'}, btn('Print', ()=>printForm(g), 'b2 sm'),
-      btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. Anything already filled in on the family stays. This can’t be undone.', 'Delete', ()=>{
-        saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad'))
+    h('div',{class:'row wrap start', style:'margin:22px 0 8px'}, btn('Print', ()=>printForm(g), 'b2 sm'),
+      // new: delete (spam, a test, sent twice). filed: archive only. archived: unarchive, or delete with a warning
+      !filed ? btn('Delete this form', ()=>confirmSheet('Delete this guest form?', 'From '+gfName(g)+'. For spam, a test, or one sent twice. This can’t be undone.', 'Delete', ()=>{
+        saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); }, {t:'gform', id:g.id}), 'lk bad')
+      : !arch ? btn('Archive', ()=>{ saveForm(g, {status:'archived'}); toast('Archived. It’s under Older forms on the family.'); render(); }, 'lk')
+      : [btn('Unarchive', ()=>{ saveForm(g, {status:'filed'}); render(); }, 'lk'),
+         btn('Delete for good', ()=>confirmSheet('Delete this form for good?', 'Only if it was filed by mistake or isn’t theirs. It has their answers'+(signDate(g) ? ' and signed waiver' : '')+', and it can’t be brought back. Anything already filled in on the family stays.', 'Delete for good', ()=>{
+           saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); if(fc0){ unSigned(fc0, signDate(g)); U.sh = {t:'client', id:fc0.id}; } }, {t:'gform', id:g.id}), 'lk bad')])
   ], filed ? btn('Done', close) : [btn('Not now', close, 'b2'), btn('File it', ()=>fileForm(g, u.fam))]);
 }
 function fileForm(g, famId){
@@ -2461,7 +2546,7 @@ const loadPaper = () => {
   paperJs ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = SITE_URL+'guest-paper.js'; sc.onload = ok; sc.onerror = () => { paperJs = null; no(); }; document.head.append(sc); });
   return paperJs.then(() => { if(!paperCss){ paperCss = true; document.head.append(h('link',{rel:'stylesheet', href:GUEST_FONTS}), h('style',{}, guestPaperCSS)); } });
 };
-const paperData = g => ({...g.data, date:g.data?.sign?.date || g.created_at.slice(0, 10)});
+const paperData = g => ({...g.data, date:g.data?.sign?.date || formDate(g)});
 // the form as they'd see it on paper, inside the sheet (read only)
 function paperView(g){
   const box = h('div',{class:'gpview', style:'margin:10px -4px 0'}, h('p',{class:'mut'}, 'Loading the paper form…'));
@@ -2806,27 +2891,39 @@ async function shrinkImage(file, max = 2000){
 }
 const asDataURL = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
 const docName = (f, pdf) => pdf && f.name.replace(/\.pdf$/i,'').replace(/_+/g,' ').trim() || 'Vet record';
-async function addDocs(p, files){
+// uploads a photo or PDF to the docs bucket (in the demo, keeps it inline); returns the record, or throws a message to show
+const shown = msg => Object.assign(new Error(msg), {shown:true});
+async function uploadDoc(f, name){
+  const pdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name);
+  if(!pdf && !/^image\//.test(f.type)) throw shown('Only photos and PDFs can be added.');
+  const blob = pdf ? f : await shrinkImage(f).catch(() => { throw shown('Couldn’t read that photo.'); });
+  if(blob.size > (DEMO ? 2e6 : 10e6)) throw shown('That file is too big (over '+(DEMO?2:10)+' MB).');
+  const d = {id:uid('d'), name:name(f, pdf), kind:pdf ? 'pdf' : 'img', at:today()};
+  try {
+    if(DEMO) d.data = await asDataURL(blob);
+    else { d.path = d.id + (pdf ? '.pdf' : '.jpg');
+      await storage('object/docs/'+d.path, {method:'POST', headers:{'Content-Type':pdf ? 'application/pdf' : 'image/jpeg', 'x-upsert':'false'}, body:blob}); }
+  } catch(e){ throw shown('Couldn’t upload. Check the signal and try again.'); }
+  return d;
+}
+// adds uploaded files to a list on a record (owner() finds it again, in case a sync refreshed it meanwhile)
+async function addFiles(key, files, name, owner, list, after){
   if(!files.length) return;
-  U.upl = {pet:p.id}; render();
-  let err = '';
+  U.upl = {pet:key}; render();
+  let err = '', last = null;
   for(const f of files){
-    const pdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name);
-    if(!pdf && !/^image\//.test(f.type)){ err = 'Only photos and PDFs can be added.'; continue; }
     try {
-      const blob = pdf ? f : await shrinkImage(f).catch(() => { throw new Error('Couldn’t read that photo.'); });
-      if(blob.size > (DEMO ? 2e6 : 10e6)){ err = 'That file is too big (over '+(DEMO?2:10)+' MB).'; continue; }
-      const d = {id:uid('d'), name:docName(f, pdf), kind:pdf ? 'pdf' : 'img', at:today()};
-      if(DEMO) d.data = await asDataURL(blob);
-      else { d.path = d.id + (pdf ? '.pdf' : '.jpg');
-        await storage('object/docs/'+d.path, {method:'POST', headers:{'Content-Type':pdf ? 'application/pdf' : 'image/jpeg', 'x-upsert':'false'}, body:blob}); }
-      const live = findPet(p.id)?.p || p;   // a sync may have refreshed the pet meanwhile
-      (live.docs ||= []).push(d);
-      if(DEMO){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){ live.docs.pop(); err = 'The demo is out of room for files.'; continue; } }
-      save();
-    } catch(e){ err = e.message==='Couldn’t read that photo.' ? e.message : 'Couldn’t upload. Check the signal and try again.'; }
+      const d = await uploadDoc(f, name), o = owner(); if(!o) break;
+      const arr = (o[list] ||= []); arr.push(d);
+      if(DEMO){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){ arr.pop(); err = 'The demo is out of room for files.'; continue; } }
+      last = d; after && after(o, d); save();
+    } catch(e){ err = e.shown ? e.message : 'Couldn’t upload. Check the signal and try again.'; }
   }
-  U.upl = err ? {pet:p.id, err} : null;
+  U.upl = err ? {pet:key, err} : null;
+  return last;
+}
+async function addDocs(p, files){
+  await addFiles(p.id, files, docName, () => findPet(p.id)?.p || p, 'docs');
   quietRender();
 }
 async function loadDoc(d){
@@ -3053,7 +3150,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
   S[spKey(sp)] = draft; U.sh = null; commit();
 }
 
-const SHEETS = {fdiff:formDiffSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+const SHEETS = {fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
