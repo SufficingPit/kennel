@@ -1447,6 +1447,59 @@ function tf(o, k, label, onSave, opts={}){
 }
 const two = (...kids) => h('div',{class:'row', style:'align-items:flex-start'}, kids);
 
+/* ---------- does the family still match their guest form? ----------
+   Filed forms are kept as sent; filing copies their answers onto the family and pets, and she can
+   edit those afterwards. This compares the family with what their filed forms say (newer forms
+   win, blank answers don't count) and lists what differs, each with Use form's / Keep mine.
+   Keep mine is remembered in c.keepMine[key] = the form's value, so it stays quiet until a newer
+   form says something else. Meds aren't compared (they live in the care schedule). */
+const FAM_FIELDS = [['first','First name','first'],['name','Last name','last'],['email','Email','email'],['cell','Cell phone','cell',1],['phone','Main phone','main',1],
+  ['work','Work phone','work',1],['city','City','city'],['state','State','state'],['zip','ZIP','zip'],['coName','Co-owner','coName'],['coMain','Co-owner main phone','coMain',1],
+  ['coAlt','Co-owner alt. phone','coAlt',1],['emName','Emergency contact','emName'],['emMain','Emergency main phone','emMain',1],['emAlt','Emergency alt. phone','emAlt',1],
+  ['vet','Vet','vet'],['vetPhone','Vet phone','vetPhone',1],['pickupBy','May pick up','pickupBy']];
+const PET_FIELDS = [['breed','Breed'],['color','Color'],['dob','Birth date'],['sex','Sex'],['fixed','Spayed / neutered'],['conditions','Conditions'],['diet','Diet'],
+  ['food','Food'],['perDay','Times a day'],['dietNotes','Diet notes'],['treats','Treats'],['treatFav','Favorite treats'],['personality','Personality'],['along','Gets along with'],
+  ['likes','Likes'],['dislikes','Dislikes'],['jumps','Jumps fences'],['bites','Has bitten'],['fights','Starts fights'],['chews','Chews beds']];
+const normV = (v, tel) => { if(Array.isArray(v)) return v.slice().sort().join(', '); v = String(v ?? '').trim(); return tel ? v.replace(/\D/g,'').slice(-10) : v.toLowerCase(); };
+const showV = (k, v) => { if(Array.isArray(v)) return v.join(', ');
+  if(k==='sex') return v==='m' ? 'Male' : v==='f' ? 'Female' : v; if(['fixed','treats','jumps','bites','fights','chews'].includes(k)) return v==='yes' ? 'Yes' : v==='no' ? 'No' : v;
+  if(k==='dob' && /^\d{4}-\d\d-\d\d$/.test(v||'')) return ymd(v); return v; };
+// what their filed forms say, newest answers winning
+function formSays(c){
+  const forms = G.list.filter(g => g.client_id===c.id && g.status==='filed').sort((a,b) => a.created_at < b.created_at ? -1 : 1);
+  if(!forms.length) return null;
+  const own = {}, pets = {}, put = (o, k, v) => { if(Array.isArray(v) ? v.length : String(v ?? '').trim()) o[k] = v; };
+  forms.forEach(g => { const d = g.data || {}, O = d.owner || {};
+    FAM_FIELDS.forEach(([, , fk]) => put(own, fk, O[fk]));
+    (d.pets || []).forEach(fp => { const nm = (fp.name || '').trim().toLowerCase(); if(!nm) return; const P = pets[nm] ||= {};
+      PET_FIELDS.forEach(([k]) => put(P, k, k==='personality' ? (fp[k] || []).slice(0, 1) : fp[k])); }); });
+  return {date:forms[forms.length-1].created_at.slice(0, 10), own, pets};
+}
+function formDiffs(c){
+  const f = formSays(c); if(!f) return {list:[], date:null};
+  const keep = c.keepMine || {}, list = [];
+  const add = (key, label, now, form, tel, apply, k) => { const fv = normV(form, tel);
+    if(fv && fv!==normV(now, tel) && keep[key]!==fv) list.push({key, label, now:showV(k, now), form:showV(k, form), fv, apply}); };
+  FAM_FIELDS.forEach(([k, label, fk, tel]) => fk in f.own && add('c.'+k, label, c[k], f.own[fk], tel, () => { c[k] = tel ? fmtPhone(String(f.own[fk])) : String(f.own[fk]).trim(); }, k));
+  c.pets.forEach(p => { const P = f.pets[p.name.trim().toLowerCase()]; if(!P) return;
+    PET_FIELDS.forEach(([k, label]) => k in P && add('p.'+p.id+'.'+k, p.name+': '+label.toLowerCase(), p[k], P[k], false,
+      () => { p[k] = Array.isArray(P[k]) ? [...P[k]] : String(P[k]).trim(); }, k)); });
+  return {list, date:f.date};
+}
+function formDiffSheet(u){
+  const c = client(u.id); if(!c) return null;
+  const {list, date} = formDiffs(c), back = () => open({t:'client', id:c.id});
+  const keepMine = d => { (c.keepMine ||= {})[d.key] = d.fv; commit(); };
+  const useForm = d => { d.apply(); if(c.keepMine) delete c.keepMine[d.key]; commit(); };
+  return sheet('Compared with their guest form', [
+    h('p',{class:'mut', style:'margin-top:0'}, 'Their newest filed guest form is from '+(date ? ymd(date) : '')+'. These details are different here. Use the form’s answer, or keep what you have.'),
+    list.length > 1 && btn('Use the form for all '+list.length, ()=>confirmSheet('Use their guest form for all '+list.length+'?', 'Replaces these details with what their form says.', 'Use the form', ()=>{ list.forEach(d => d.apply()); delete c.keepMine; U.sh = {t:'fdiff', id:c.id}; }, {t:'fdiff', id:c.id}), 'b2'),
+    list.length ? list.map(d => h('div',{class:'card'}, h('b',{}, d.label),
+      h('div',{}, h('span',{class:'mut'}, 'Here: '), d.now || '(blank)'), h('div',{}, h('span',{class:'mut'}, 'Their form: '), d.form),
+      h('div',{class:'row start', style:'margin-top:6px'}, btn('Use form’s', ()=>useForm(d), 'chip'), btn('Keep mine', ()=>keepMine(d), 'lk'))))
+      : h('p',{}, 'Everything matches their guest form now.')
+  ], btn('Done', back), back);
+}
 function clientSheet(u){
   const isNew = !u.id;
   const c = isNew ? (u.draft ||= fillClient({id:uid('c'), name:u.name||'', pets:[]})) : client(u.id);
@@ -1501,6 +1554,8 @@ function clientSheet(u){
     h('div',{class:'sec'},'Who else may pick up'),
     tf(c,'pickupBy','Names',sv,{ph:'Besides the owners'}),
     h('div',{class:'sec'},'Waiver'),
+    !isNew && (n => n > 0 && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'fdiff', id:c.id})},
+      h('span',{class:'grow'}, h('b',{}, 'Differs from their guest form'), h('div',{class:'mut'}, plural(n, 'detail')+' here aren’t what their form says. Review')), h('span',{class:'chev'}, '›')))(formDiffs(c).list.length),
     !isNew && G.list.filter(g => g.client_id===c.id).map(g => h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
       h('span',{class:'grow'}, h('b',{}, 'Guest form'), h('div',{class:'mut'}, (g.pets || '')+' · sent '+ymd(g.created_at.slice(0,10)))), h('span',{class:'chev'}, '›'))),
     field('Date signed', h('div',{class:'row'},
@@ -2998,7 +3053,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
   S[spKey(sp)] = draft; U.sh = null; commit();
 }
 
-const SHEETS = {tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+const SHEETS = {fdiff:formDiffSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
