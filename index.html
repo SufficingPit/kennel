@@ -355,6 +355,18 @@ const uid = p => (p||'i')+Date.now().toString(36)+(seq++).toString(36)+Math.rand
 
 /* ---------- data ---------- */
 function task(tag, times, note, pet){ return {id:uid('t'), tag, times:times||[], note:note||'', pet:pet||''}; }
+// Clock times written in a customer's med instructions ("8am", "6:30 pm", "18:00", "noon"), as HH:MM.
+// Only real times: "twice a day" or "with dinner" give none, and the med stays as needed.
+function medTimes(text){
+  const out = new Set(), t = String(text || '').toLowerCase();
+  if(/\bnoon\b/.test(t)) out.add('12:00');
+  for(const m of t.matchAll(/\b(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/g)){
+    let hh = +m[1]; if(hh < 1 || hh > 12) continue;
+    if(m[3][0]==='p' && hh < 12) hh += 12; if(m[3][0]==='a' && hh===12) hh = 0;
+    out.add(pad2(hh)+':'+(m[2] || '00')); }
+  for(const m of t.matchAll(/(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?!\s*(?:a\.?m|p\.?m))(?!\d)/g)) out.add(pad2(+m[1])+':'+m[2]);
+  return [...out].sort();
+}
 function copyPlan(pl){ return pl.map(t => ({...t, id:uid('t'), times:[...t.times]})); }
 // Care can be dated: `from` (first day) and `until` (last day). Ended care stays in the plan
 // so past days, check-offs and owner reports keep showing what was actually scheduled.
@@ -2380,9 +2392,9 @@ function fileForm(g, famId){
     if((upd || !p.along.length) && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
     const note = [fp.alsoKnow, fp.notes].map(x => (x || '').trim()).filter(Boolean).join('\n');
     if(note && !(p.notes || '').includes(note)) p.notes = p.notes ? p.notes+'\n'+note : note;
-    // their meds join the pet's usual care as "as needed" until she sets the times
+    // their meds join the pet's usual care, at any clock times they wrote (else as needed, until she sets them)
     (fp.meds || []).forEach(m => { const t = [m.name, m.dose, m.freq, m.instr].map(x => (x || '').trim()).filter(Boolean).join(', ');
-      if(t && !p.plan.some(x => x.tag==='meds' && x.note===t)) p.plan.push(task('meds', [], t)); });
+      if(t && !p.plan.some(x => x.tag==='meds' && x.note===t)) p.plan.push(task('meds', medTimes([m.freq, m.instr].join(' ')), t)); });
   });
   if(g.mode!=='pets') delete c.formUpdate;   // she asked for an update and got it
   saveForm(g, {status:'filed', client_id:c.id, filed_at:new Date().toISOString()});
@@ -2534,7 +2546,7 @@ function reqStayBooked(f, sid){
   if(st && r.own_food) st.ownFood = true;
   const medPets = st ? r.pets.map((p, i) => p.meds && {p, id:(r._ids||[])[i]}).filter(x => x && st.pets.includes(x.id)) : [];
   if(medPets.length){
-    st.extra = [...(st.extra||[]), ...medPets.map(x => task('meds', [], x.p.meds, x.id))];
+    st.extra = [...(st.extra||[]), ...medPets.map(x => task('meds', medTimes(x.p.meds), x.p.meds, x.id))];
     const R0 = S.rates || defaultRates(), n = Math.max(1, daysBetween(st.start, st.end));
     if(R0.meds) (st.charges ||= []).push({id:uid('c'), label:'Medications given', amt:R0.meds, qty:n*medPets.length});
   }
