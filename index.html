@@ -2167,7 +2167,7 @@ function ratesSection(){
         h('div',{style:'width:130px'}, fieldBtn(t12(b.eveFrom || '16:00'), 'Time', ()=>pickTime('Evening pickup starts', b.eveFrom || '16:00', v=>{ b.eveFrom = v; save(); }))))),
       field('Medications (the + Meds button on a stay)', num(R0,'meds',{label:'Meds charge'})),
       field('Card payments', num(R0,'card',{pre:'', post:'% added', label:'Card fee percent'})),
-      h('p',{class:'mut', style:'margin:0'},'Set any of these to 0 for none. Your drop-off and pickup hours are under Online booking.')])];
+      h('p',{class:'mut', style:'margin:0'},'Your drop-off and pickup hours are under Online booking.')])];
 }
 
 /* ---------- notifications for new requests (per phone) ----------
