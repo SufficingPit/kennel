@@ -176,6 +176,13 @@ body.typing .sh>.ft{position:static;border-top:0}
 .chk.on{background:var(--pri);border-color:var(--pri)}
 .warn{background:var(--warnbg);color:var(--warnfg);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px}
 .err{color:var(--bad);font-size:14px;font-weight:600;flex-basis:100%;order:-1}
+.steps{display:flex;flex-wrap:wrap;align-items:center;list-style:none;margin:-4px 0 14px;padding:0;font-size:13px;color:var(--mut);row-gap:2px}
+.steps li{display:flex;align-items:center;min-height:30px}
+.steps li+li::before{content:'›';margin:0 8px;color:var(--mut)}
+.steps .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1.5px solid currentColor;font-size:11px;font-weight:700;margin-right:5px}
+.steps .on{color:var(--ink);font-weight:700}
+.steps .on .n{background:var(--pri);border-color:var(--pri);color:#fff}
+.steps button{background:none;border:0;padding:0;font:inherit;color:var(--pri);cursor:pointer;display:flex;align-items:center;min-height:30px}
 .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--row);color:var(--mut);margin-left:6px;vertical-align:1px;white-space:nowrap}
 .pill.bad{background:var(--bad);color:#fff}
 .pill.ok{background:var(--pri-soft);color:var(--pri)}
@@ -602,15 +609,54 @@ const seg = (opts, cur, fn) => h('div',{class:'seg', role:'group'}, opts.map(([v
 
 const commit = () => { save(); render(); };
 const open = sh => { U.sh = sh; U.pk = null; render(); };
-const close = () => { U.sh = null; U.pk = null; render(); };
+const close = () => { U.sh = null; U.pk = null; U.flow = null; render(); };
 const confirmSheet = (title, msg, label, fn, back) => open({t:'confirm', title, msg, label, fn, back});
 
 /* ---------- sheets ---------- */
+/* ---------- step-by-step flows ----------
+   Approving a request: Request > Book (a step per kennel) > Text them. Declining: Request > Decline.
+   Filing a guest form: Guest form > Family. A strip at the top of each step shows where she is, and
+   earlier steps can be tapped. Back (or ×) goes one step back and takes back what that step did:
+   a stay it booked comes off, and from the first stay, a family or pets made for the request go away.
+   U.flow = {kind:'req'|'form', id, fam, stack:[{data, sheet, prev}]}: before each step, the families
+   and stays as they were and the sheet to return to. Closing a flow any other way ends it. */
+const snapData = () => JSON.stringify({clients:S.clients, stays:S.stays});
+const inFlow = (kind, id) => !!(U.flow && U.flow.kind===kind && U.flow.id===id && U.flow.stack.length);
+function flowBack(to){
+  const F = U.flow; if(!F || !F.stack.length) return close();
+  if(to == null) to = F.stack.length - 1;
+  const e = F.stack[to]; F.stack.length = to;
+  if(F.kind==='req'){ const r = R.list.find(x => x.id===F.id);
+    if(r && r.status==='approved') answerReq(r, {status:'pending', stay_id:null, texted:null, answered_at:null}, true); }
+  if(F.kind==='form'){ const g = G.list.find(x => x.id===F.id); if(g) saveForm(g, e.prev); }
+  const d = JSON.parse(e.data); S.clients = d.clients; S.stays = d.stays; save();
+  if(!F.stack.length) U.flow = null;   // back at the start, as if nothing happened
+  open(e.sheet);
+}
+function steps(list, at, go){
+  return h('ol',{class:'steps', 'aria-label':'Steps'}, list.map((l, i) => h('li',{class:i===at ? 'on' : '', 'aria-current':i===at ? 'step' : null},
+    i < at && go ? h('button',{onclick:()=>go(i)}, h('span',{class:'n'}, i+1), l) : [h('span',{class:'n'}, i < at ? '✓' : i+1), l])));
+}
+const bookSteps = n => ['Request', ...(n > 1 ? Array.from({length:n}, (_, i) => 'Kennel '+(i+1)) : ['Book']), 'Text them'];
+function flowStrip(u){
+  if(!u) return null;
+  if(u.t==='req'){ const r = R.list.find(x => x.id===u.id); return r && r.status==='pending' ? steps(['Request', 'Book', 'Text them'], 0) : null; }
+  if(u.t==='form' && u.f && u.f.req){ const f = u.f, n = f.made.length + 1 + f.queue.length;
+    return steps(bookSteps(n), f.made.length + 1, inFlow('req', f.req) ? i => flowBack(i) : null); }
+  if(u.t==='reqans'){ const r = R.list.find(x => x.id===u.id); if(!r) return null;
+    if(u.act!=='approved') return steps(['Request', 'Decline'], 1, () => open({t:'req', id:r.id}));
+    const n = (r.stay_id || '').split(',').filter(Boolean).length || 1;
+    return steps(bookSteps(n), n + 1, inFlow('req', r.id) ? i => flowBack(i) : null); }
+  if(u.t==='gform'){ const g = G.list.find(x => x.id===u.id); return g && g.status==='new' ? steps(['Guest form', 'Family'], 0) : null; }
+  if(u.t==='client' && U.flow && U.flow.kind==='form' && U.flow.fam===u.id && U.flow.stack.length){ const c = client(u.id);
+    return steps(['Guest form', 'Family'], 1, () => confirmSheet('Go back to the form?', 'Takes back filing it: what it filled in on the '+(c ? c.name+' family' : 'family')+' comes off, along with any changes you made since.', 'Go back', () => flowBack(0), u)); }
+  return null;
+}
 function sheet(title, body, foot, onClose = close){
   return h('div',{class:'ov', onclick:e=>{ if(e.target===e.currentTarget) onClose(); }},
     h('div',{class:'sh', role:'dialog', 'aria-modal':'true', 'aria-label':title},
       h('div',{class:'hd'}, h('h1',{}, title), btn('×', onClose, 'ic', {'aria-label':'Close'})),
-      h('div',{class:'sb'}, body),
+      h('div',{class:'sb'}, flowStrip(U.sh), body),
       foot && h('div',{class:'ft'}, foot)));
 }
 
@@ -1269,13 +1315,13 @@ function stayForm(u){
     return sid;
   };
   const saveStay = () => {
-    const sid = apply(); if(!sid) return;
-    if(f.req){ save(); reqStayBooked(f, sid); return; }
+    const snap = snapData(), sid = apply(); if(!sid) return;
+    if(f.req){ if(inFlow('req', f.req)) U.flow.stack.push({data:snap, sheet:JSON.parse(JSON.stringify({t:'form', f}))});
+      save(); reqStayBooked(f, sid); return; }
     U.wk = weekStart(f.start); U.tab = 'cal'; U.sh = f.id ? {t:'stay', id:f.id} : null; commit();
   };
-  const cancel = f.id ? () => open({t:'stay', id:f.id}) : f.req ? () => open({t:'req', id:f.req}) : close;
+  const cancel = f.id ? () => open({t:'stay', id:f.id}) : f.req ? () => inFlow('req', f.req) ? flowBack() : open({t:'req', id:f.req}) : close;
   return sheet(f.id ? 'Edit stay' : f.req ? 'Book request' : 'New stay', [
-    f.req && (f.queue.length || f.made.length) ? h('p',{class:'mut', style:'margin-top:0'}, 'Kennel '+(f.made.length+1)+' of '+(f.made.length+1+f.queue.length)+' for this request.') : null,
     field('Family', f.id ? h('div',{class:'fld', style:'border-style:dashed'}, h('span',{class:'v'}, (c?c.name:'?')+' family'))
       : fieldBtn(c && c.name+' family', 'Choose a family', ()=>pickFamily(u), c && bestPhone(c))),
     c && field('Pets', h('div',{class:'chips', style:'margin:0'},
@@ -1299,7 +1345,7 @@ function stayForm(u){
     field('Notes', area(f.notes, v=>f.notes=v, {placeholder:'Anything else for this stay'})),
   ], [
     u.err && h('div',{class:'err', role:'alert'}, u.err),
-    btn('Cancel', cancel, 'b2'), btn(f.id ? 'Save changes' : 'Book stay', saveStay)
+    btn(f.req ? 'Back' : 'Cancel', cancel, 'b2'), btn(f.id ? 'Save changes' : f.req && f.queue.length ? 'Book, next kennel' : 'Book stay', saveStay)
   ], cancel);
 }
 
@@ -2560,7 +2606,7 @@ function formSheet(u){
   ], filed ? btn('Done', close) : [btn('Not now', close, 'b2'), btn('File it', ()=>fileForm(g, u.fam))]);
 }
 function fileForm(g, famId){
-  const d = g.data || {}, O = d.owner || {};
+  const d = g.data || {}, O = d.owner || {}, snap = snapData(), prev = {status:g.status, client_id:g.client_id || null, filed_at:g.filed_at || null};
   let c = famId!=='new' && client(famId);
   if(!c){ c = fillClient({id:uid('c'), first:(O.first||'').trim(), name:(O.last||'').trim() || lastName(g.name)}); S.clients.push(c); }
   delete c.archived;
@@ -2589,6 +2635,7 @@ function fileForm(g, famId){
   });
   if(g.mode!=='pets') delete c.formUpdate;   // she asked for an update and got it
   saveForm(g, {status:'filed', client_id:c.id, filed_at:new Date().toISOString()});
+  U.flow = {kind:'form', id:g.id, fam:c.id, stack:[{data:snap, sheet:{t:'gform', id:g.id}, prev}]};
   U.sh = {t:'client', id:c.id}; commit();
 }
 // prints the form as the paper form, drawn by the website's own guest-paper.js
@@ -2674,7 +2721,7 @@ function reqSheet(u){
         : 'They can see this request, your answer and your note at their link until the day after pickup. Then it closes on its own.',
       btn(r.hidden ? 'Show it again' : 'Hide from website', ()=>{ answerReq(r, {hidden:!r.hidden}, true); render(); }, 'lk')),
     h('div',{style:'margin:24px 0 8px'}, btn('Delete this request', ()=>open({t:'reqdel', id:r.id}), 'lk bad'))
-  ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>approveReq(r, u.fam))] : btn('Done', close));
+  ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>{ U.flow = {kind:'req', id:r.id, stack:[{data:snapData(), sheet:{t:'req', id:r.id, fam:u.fam, how:u.how}}]}; approveReq(r, u.fam); })] : btn('Done', close));
 }
 
 // Approve: make the family and pets if needed, then book one stay per kennel needed
@@ -2772,7 +2819,7 @@ function reqAnsSheet(u){
   const finish = texted => { const note = (u.note||'').trim();
     if(ok) answerReq(r, {reply:note || r.reply || null, texted}, true); else answerReq(r, {status:'declined', reply:note || null, texted}); };
   const leave = texted => { finish(texted); U.tab = 'reqs'; close(); };
-  const back = ok ? () => leave(false) : () => open({t:'req', id:r.id});
+  const back = ok ? () => inFlow('req', r.id) ? flowBack() : leave(false) : () => open({t:'req', id:r.id});
   return sheet(ok ? 'Booked' : 'Decline request', [
     ok && h('p',{style:'margin-top:0'}, 'The stay'+(r.stay_id && r.stay_id.includes(',') ? 's are' : ' is')+' on the calendar. Let '+firstName(r.name)+' know.'),
     field(ok ? 'Add a note (optional)' : 'Reason or note (optional)', h('textarea',{placeholder:ok ? 'e.g. Bring his food in a labeled bag.' : 'e.g. We’re full that week, but have room the week after.',
