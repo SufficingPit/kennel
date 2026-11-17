@@ -1,9 +1,11 @@
 // Keeps a copy of the app on the phone so it opens without signal.
 // Always tries the network first, so updates show up when online.
-const CACHE = 'kennel-v71';
+// the preview copy (kennel-preview/) shares the address with old installs, so it keeps its own caches
+const PREFIX = self.registration.scope.includes('-preview/') ? 'kennel-preview-' : 'kennel-v';
+const CACHE = PREFIX + '72';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
-self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
+self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {
   // only the app's own files; the online copy (Supabase) always goes straight to the network
   if(e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;

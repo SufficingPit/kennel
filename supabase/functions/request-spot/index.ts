@@ -3,7 +3,8 @@
 // 2. Calls request_spot() with the service key, which re-checks every rule and holds the spot.
 // Deploy with "Verify JWT" OFF (the public page has no login). Needs the secret TURNSTILE_SECRET.
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase automatically.
-//    Or, with kind "form", calls guest_form_submit() for a new guest form filled out online.
+//    Or, with kind "form", calls guest_form_submit() for a new guest form filled out online,
+//    and returns one-time upload links for any vet records sent with it (uploadLinks below).
 // 3. Sends a notification to every phone that turned them on (push_subs), if the secret
 //    VAPID_PRIVATE is set. A failed notification never fails the request.
 import webpush from "npm:web-push@3.6.7";
@@ -48,8 +49,31 @@ Deno.serve(async (req) => {
   if (!r.ok) return reply({ ok: false, reason: "Couldn’t send. Please try again." }, 502);
   const out = await r.json();
   if (out?.ok) await notify(url, key, isForm ? formMsg(body.p) : requestMsg(body.p)).catch(() => {});
+  // vet records sent with a guest form: one-time upload links into the private "docs" bucket
+  if (out?.ok && isForm) out.uploads = await uploadLinks(url, key, body.p).catch(() => []);
   return reply(out);
 });
+
+// A guest form can carry up to 3 photos or PDFs per pet (data.pets[i].docs = [{name, kind, path}]).
+// Each path must be forms/<the form's key>/<pet>-<n>.jpg|pdf; files can't replace anything already there.
+async function uploadLinks(url: string, key: string, p: Record<string, any>) {
+  const fk = String(p.key || "").toLowerCase();
+  if (!/^[0-9a-f-]{36}$/.test(fk)) return [];
+  const want: string[] = [];
+  ((p.data?.pets || []) as any[]).slice(0, 8).forEach((pet, i) =>
+    ((pet?.docs || []) as any[]).slice(0, 3).forEach((d, j) => {
+      const path = String(d?.path || "");
+      if (path === `forms/${fk}/${i}-${j}.${d?.kind === "pdf" ? "pdf" : "jpg"}`) want.push(path);
+    }));
+  return (await Promise.all(want.map(async (path) => {
+    const r = await fetch(`${url}/storage/v1/object/upload/sign/docs/${path}`, {
+      method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: "{}",
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.url ? { path, url: url + "/storage/v1" + j.url } : null;
+  }))).filter(Boolean);
+}
 
 const md = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 function requestMsg(p: Record<string, any>) {

@@ -149,6 +149,14 @@ body.typing .sh>.ft{position:static;border-top:0}
 .lane>.cell{flex:1;min-width:0;border:0;border-left:1px solid var(--line);background:none;padding:0}
 .bar{position:absolute;top:4px;height:24px;z-index:2;border:0;border-radius:6px;padding:0 6px;color:#fff;font-size:11px;font-weight:600;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:24px}
 .bar.late{outline:2px dashed var(--bad);outline-offset:1px}
+/* booked time that wasn't used: faded stripes in the stay's color; taps go through to the day */
+.ghost{position:absolute;top:4px;height:24px;z-index:1;pointer-events:none;border-radius:6px;opacity:.55;
+  background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 55%, transparent) 0 3px, transparent 3px 7px);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent)}
+.sw.ghostsw{--c:#4B5563;background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 60%, transparent) 0 2px, transparent 2px 4px);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, transparent)}
+/* day of the stay on a bar ("2/5") */
+.bar .dc{flex:none;margin-right:5px;padding:0 4px;line-height:16px;border-radius:4px;background:rgba(255,255,255,.26);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+.pvw{position:fixed;top:max(6px, env(safe-area-inset-top));right:8px;z-index:99;pointer-events:none;background:#B45309;color:#fff;font:700 10px/16px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:0 6px;border-radius:4px;opacity:.9}
 .trk{position:absolute;top:31px;height:8px;border-radius:3px;z-index:2;pointer-events:none}
 .pip{position:absolute;top:31px;height:8px;width:2px;margin-left:-1px;border-radius:1px;z-index:3;pointer-events:none}
 .pip.done{opacity:.3}
@@ -314,7 +322,9 @@ input[type=checkbox]:focus-visible{outline:2px solid var(--pri);outline-offset:2
 
 // ?demo opens a sample-data copy that never signs in and keeps its own storage
 const DEMO = new URLSearchParams(location.search).has('demo');
-const KEY = DEMO ? 'kennel-demo-v1' : 'kennel-proto-v8';
+// the test copy at sufficingpit.github.io/kennel-preview/: same online data, its own storage on the phone
+const PREVIEW = /-preview\//.test(location.pathname);
+const KEY = (PREVIEW ? 'kennel-preview-' : 'kennel-') + (DEMO ? 'demo-v1' : 'proto-v8');
 const BUSINESS = 'Little Village Pet Lodge';
 const COLORS = ['#16A34A','#0EA5E9','#F59E0B','#A855F7','#EF4444','#EC4899','#14B8A6','#6366F1','#64748B'];
 const STATUS = {booked:'Booked', in:'In kennel', out:'Checked out'};
@@ -341,13 +351,17 @@ const stamp = (d,t) => d+'T'+(t||'00:00');
    where it starts. pieces(s) splits the stay into [{k, d, t, e, et}] runs in one kennel. */
 const byWhen = (a, b) => stamp(a.date, a.time) < stamp(b.date, b.time) ? -1 : 1;
 function pieces(s){
-  const out = []; let k = s.kennel, d = s.start, t = s.arr;
+  // the real stay (see realStart): a late arrival or early pickup leaves the rest of the kennel time free
+  const a = realStart(s), b = realEnd(s);
+  const out = []; let k = s.kennel, d = a.d, t = a.t;
   for(const m of [...(s.moves||[])].sort(byWhen)){
     const at = stamp(m.date, m.time);
-    if(at <= stamp(d, t) || at >= stamp(s.end, s.pick) || m.kennel===k) continue;
+    if(at >= stamp(b.d, b.t)) continue;
+    if(at <= stamp(d, t)){ if(m.kennel!==k && !out.length) k = m.kennel; continue; }   // moved before a late arrival: they arrive in the new kennel
+    if(m.kennel===k) continue;
     out.push({k, d, t, e:m.date, et:m.time}); k = m.kennel; d = m.date; t = m.time;
   }
-  out.push({k, d, t, e:s.end, et:s.pick});
+  out.push({k, d, t, e:b.d, et:b.t});
   return out;
 }
 // which kennel a stay is in at a given day and time (before it starts: the first kennel)
@@ -565,7 +579,32 @@ const petNames = s => s.pets.map(i=>findPet(i)?.p.name || '?').join(' & ');
 const famOf = s => findPet(s.pets[0])?.c.name || '';
 const withFam = s => petNames(s) + (famOf(s) ? ' ('+famOf(s)+')' : '');
 const stayClient = s => findPet(s.pets[0])?.c;
-const stayStart = s => stamp(s.start, s.arr), stayEnd = s => stamp(s.end, s.pick);
+/* Booked vs. real: s.start/arr and s.end/pick stay as booked. Check-in and checkout record when it
+   really happened (s.inD/inT, s.outD/outT). A late arrival or an early pickup moves the real stay:
+   the kennel is free outside it (the calendar shows that part striped), and the bill and day count
+   follow it. Within half an hour of the booked time on the booked day counts as on time. */
+const ON_TIME = 30;
+const onTime = (d, t, bd, bt) => d===bd && Math.abs(mins(t) - mins(bt)) <= ON_TIME;
+const realStart = s => s.inD && s.inT && !onTime(s.inD, s.inT, s.start, s.arr) ? {d:s.inD, t:s.inT} : {d:s.start, t:s.arr};
+const realEnd = s => { const a = realStart(s);
+  const b = s.outD && s.outT && !onTime(s.outD, s.outT, s.end, s.pick) ? {d:s.outD, t:s.outT} : {d:s.end, t:s.pick};
+  return stamp(b.d, b.t) < stamp(a.d, a.t) ? a : b; };
+const stayStart = s => { const a = realStart(s); return stamp(a.d, a.t); }, stayEnd = s => { const b = realEnd(s); return stamp(b.d, b.t); };
+// first and last day the stay shows on: the booked days plus any real days outside them
+const spanStart = s => realStart(s).d < s.start ? realStart(s).d : s.start, spanEnd = s => realEnd(s).d > s.end ? realEnd(s).d : s.end;
+// how many nights it was or will be, and (while in) which day of the stay it is
+function dayCount(s){
+  if(s.status==='booked') return null;
+  const a = realStart(s), b = realEnd(s), n = daysBetween(a.d, b.d), booked = daysBetween(s.start, s.end), td = today();
+  if(s.status==='out') return n===booked ? {long: n ? 'Stayed '+plural(n,'night') : 'Same-day stay'}
+    : {short: n+'/'+booked, long: 'Stayed '+plural(n,'night')+', booked '+booked};
+  if(n < 1 && td <= b.d) return null;
+  const k = daysBetween(a.d, td) + (td < b.d ? 1 : 0);
+  return {short: k+'/'+n, long: td > b.d ? 'Day '+k+' of '+n+', past pickup' : td===b.d ? 'Day '+n+' of '+n+', going home today' : 'Day '+k+' of '+n};
+}
+function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); }
+function undoCheckIn(s){ s.status = 'booked'; delete s.inD; delete s.inT; delete s.outD; delete s.outT; }
+function undoCheckOut(s){ s.status = 'in'; delete s.outD; delete s.outT; }
 const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
 const clash = (f, kennelId) => { if(kennelId==='own') return null;
   const mine = pieces({...f, kennel:kennelId}).filter(p => p.k===kennelId);
@@ -879,7 +918,8 @@ const planReadOnly = plan => plan.filter(current).length ? plan.filter(current).
 
 /* ---------- care tasks for a stay on a given day ---------- */
 function tasksFor(s, D){
-  if(D < s.start || D > s.end) return [];
+  if(D < spanStart(s) || D > spanEnd(s)) return [];
+  const from = stayStart(s), to = stayEnd(s);   // the real stay: nothing to do before a late arrival or after an early pickup
   const out = [];
   for(const pid of s.pets){
     const x = findPet(pid); if(!x) continue;
@@ -891,8 +931,8 @@ function tasksFor(s, D){
       for(const old of [...(t.hist || []), t]) if(forPet(old)) for(const tm of old.times) if(S.log[key(tm)]) times.add(tm);
       const view = v && v!==t ? {...t, tag:v.tag, note:v.note, pet:v.pet} : t;
       for(const tm of times){
-        if(D===s.start && tm < s.arr) continue;   // before drop-off
-        if(D===s.end && tm > s.pick) continue;    // after pickup
+        // before drop-off or after pickup (unless it was checked off: a check-off never disappears)
+        if((stamp(D, tm) < from || stamp(D, tm) > to) && !S.log[key(tm)]) continue;
         out.push({s, p:x.p, c:x.c, t:view, tm, key:key(tm), D});
       }
     }
@@ -931,7 +971,13 @@ function calView(){
              : dt.toLocaleDateString('en-US',{weekday:'short'}),
         h('b',{}, dt.getDate())); }));
 
-  const viewStays = S.stays.filter(s => s.start<=end && s.end>=w);
+  const viewStays = S.stays.filter(s => spanStart(s)<=end && spanEnd(s)>=w);
+  // booked time that wasn't used (before a late arrival, after an early pickup): drawn striped, and free to book
+  const unused = s => { const a = realStart(s), b = realEnd(s), ps = pieces(s), out = [];
+    if(stamp(a.d, a.t) > stamp(s.start, s.arr)) out.push({k:s.kennel, d:s.start, t:s.arr, e:a.d, et:a.t});
+    if(stamp(b.d, b.t) < stamp(s.end, s.pick)) out.push({k:ps[ps.length-1].k, d:b.d, t:b.t, e:s.end, et:s.pick});
+    return out.filter(g => g.k!=='own'); };
+  let anyUnused = false;
   // which kennel rows to show: all, ones with a stay in view, or ones with a pet in them right now
   const inView = S.kennels.filter(k => viewStays.some(s => pieces(s).some(p => p.k===k.id && p.d<=end && p.e>=w)));
   const hereNow = S.kennels.filter(k => S.stays.some(s => s.status==='in' && kennelAt(s, td, nowHM())===k.id));
@@ -949,20 +995,30 @@ function calView(){
     const lane = h('div',{class:'lane'},
       days.map(d => h('button',{class:'cell'+(parseD(d).getDay()===0 && wide ? ' wkstart' : ''), 'aria-label':'New stay in '+(cage ? 'an own cage' : k.name)+' on '+md(d),
         onclick:()=>open({t:'form', f:newStayDraft(k.id, d)})})));
+    // unused booked time first, so any stay booked into it sits on top; taps go through to the day underneath
+    if(!cage) for(const s of viewStays) for(const g of unused(s)){
+      if(g.k!==k.id || g.d>end || g.e<w) continue;
+      const a = g.d<w ? 0 : (daysBetween(w,g.d) + calFrac(g.t))/n, b = g.e>end ? 1 : (daysBetween(w,g.e) + calFrac(g.et))/n;
+      if(b - a < 0.002) continue;
+      anyUnused = true;
+      lane.append(h('div',{class:'ghost', 'aria-hidden':'true', style:`left:calc(${a*100}% + 1px);width:calc(${(b-a)*100}% - 2px);--c:${statusColor(s)}`}));
+    }
     for(const s of viewStays) for(const pc of pieces(s)){
       if(!has(pc, s) || pc.d>end || pc.e<w) continue;
-      const moved = pc.d!==s.start || pc.t!==s.arr, moves = pc.e!==s.end || pc.et!==s.pick;
+      const ra = realStart(s), rb = realEnd(s);
+      const moved = pc.d!==ra.d || pc.t!==ra.t, moves = pc.e!==rb.d || pc.et!==rb.t;
       const a = pc.d<w ? 0 : (daysBetween(w,pc.d) + calFrac(pc.t))/n;
       const b = pc.e>end ? 1 : (daysBetween(w,pc.e) + calFrac(pc.et))/n;
       const width = Math.max(b-a, 0.35/n);
       const late = s.status==='booked' && stayStart(s) < stamp(td, nowHM());
       const r = (pc.d<w || moved ? '0' : '6px'), rr = (pc.e>end || moves ? '0' : '6px');
       const pos = `left:calc(${a*100}% + 1px);width:calc(${width*100}% - 2px);`;
+      const dc = dayCount(s);
       lane.append(h('button',{class:'bar'+(late?' late':''),
-        'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':''),
+        'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':'')+(dc ? ', '+dc.long : ''),
         style:pos+`background:${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
         onclick:()=>open({t:'stay', id:s.id})},
-        h('span',{class:'bl mqw'}, h('span',{class:'mq'}, h('span',{class:'nm'}, pc.d<w ? '‹ ' : moved ? '↪ ' : '', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), pc.e>end && h('span',{class:'arr'},'›')));
+        h('span',{class:'bl mqw'}, h('span',{class:'mq'}, dc?.short && h('span',{class:'dc'}, dc.short), h('span',{class:'nm'}, pc.d<w ? '‹ ' : moved ? '↪ ' : '', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), pc.e>end && h('span',{class:'arr'},'›')));
       const marks = [];
       for(const D of days){
         const all = tasksFor(s,D).filter(it => stamp(pc.d,pc.t) <= stamp(D,it.tm) && stamp(D,it.tm) < stamp(pc.e,pc.et)), seen = new Set();
@@ -1026,7 +1082,8 @@ function calView(){
     // the keys only explain bars, so they wait until there's a stay on screen
     shown.some(k => viewStays.some(s => pieces(s).some(p => p.k===k.id))) && [h('div',{class:'lg'},
       [['#1D4ED8','Booked'],['#0F766E','In kennel'],['#4B5563','Out, paid'],['#B45309','Out, unpaid']].map(([c,t]) => h('span',{}, h('span',{class:'sw',style:'background:'+c}), t)),
-      h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet')),
+      h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet'),
+      anyUnused && h('span',{}, h('span',{class:'sw ghostsw'}),'Booked, not used')),
     calTags.length>0 && h('div',{class:'lg'}, h('span',{},'Care:'),
       calTags.map(t => h('span',{}, h('span',{class:'sw', style:'width:3px;height:10px;border-radius:2px;background:'+t.color}), t.name)), h('span',{},'(faded = done)'))]
   ];
@@ -1060,7 +1117,7 @@ function rangeSheet(u){
 }
 
 /* ============================== DAY ============================== */
-const staysOn = D => S.stays.filter(s => s.start<=D && s.end>=D);
+const staysOn = D => S.stays.filter(s => realStart(s).d<=D && realEnd(s).d>=D);
 const kennelOrder = (a,b) => { const D = U.day || today(); return S.kennels.findIndex(k=>k.id===kennelAt(a,D)) - S.kennels.findIndex(k=>k.id===kennelAt(b,D)); };
 
 function timeline(D){
@@ -1085,8 +1142,9 @@ function timeline(D){
             onclick:()=>toggleDone(it)}, done && check()));
         });
       }
+      const dc = D===today() && s.status==='in' ? dayCount(s) : null;
       rows.push(h('div',{class:'tl-r', title:s.status==='booked'?'Not checked in yet':null},
-        h('div',{class:'tl-l'}, h('div',{style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(kennelAt(s, D)).name),
+        h('div',{class:'tl-l'}, h('div',{style:s.status==='booked'?'opacity:.5':''}, h('b',{}, kennel(kennelAt(s, D)).name, dc?.short && h('span',{class:'mut', style:'font-weight:600;font-size:11px', title:dc.long}, ' · day '+dc.short)),
           h('div',{class:'mut mqw'}, h('span',{class:'mq'}, x.p.name+' ('+x.c.name+')')))),
         track));
     }
@@ -1112,7 +1170,8 @@ function dayView(){
       D!==td ? btn('Back to today', ()=>{U.day=null; render();}, 'lk') : h('div',{class:'mut'},'Today')),
     btn('›', ()=>{U.day=addDays(D,1); render();}, 'ic', {'aria-label':'Next day'}));
 
-  const arrivals = S.stays.filter(s => s.start===D && s.status==='booked').sort((a,b)=>a.arr<b.arr?-1:1);
+  // arriving: booked for this day, plus (today) any that were due earlier and haven't come yet
+  const arrivals = S.stays.filter(s => s.status==='booked' && (s.start===D || (D===td && s.start<D && s.end>=D))).sort((a,b)=>stayStart(a)<stayStart(b)?-1:1);
   const pickups = S.stays.filter(s => s.end===D && s.status==='in').sort((a,b)=>a.pick<b.pick?-1:1);
   const items = staysOn(D).filter(s=>s.status!=='booked').flatMap(s=>tasksFor(s,D)).filter(it=>it.s.status==='in' || S.log[it.key])
     .sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : kennelOrder(a.s,b.s));
@@ -1124,8 +1183,8 @@ function dayView(){
 
   const stayLine = (s, action) => h('div',{class:'card row'},
     h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
-      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? 'drop-off '+t12(s.arr) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
-    action==='in' ? btn('Check in', ()=>{s.status='in'; commit();}, 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
+      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? (s.start<D ? 'was due '+wmd(s.start)+', '+t12(s.arr) : 'drop-off '+t12(s.arr)) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
+    action==='in' ? btn('Check in', ()=>{ checkIn(s); commit(); }, 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
 
   // to-do first, grouped by time; finished items fold into one collapsible section
   const byTime = list => { const gs = []; for(const it of list){ const g = gs[gs.length-1]; if(g && g.tm===it.tm) g.items.push(it); else gs.push({tm:it.tm, items:[it]}); } return gs; };
@@ -1425,8 +1484,11 @@ function stayDetail(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
   const c = stayClient(s), pets = s.pets.map(i=>findPet(i)?.p).filter(Boolean);
   const set = (k,v) => { s[k]=v; commit(); };
-  const n = daysBetween(s.start, s.end);
+  const n = daysBetween(s.start, s.end), dc = dayCount(s);
   const warns = pets.map(p => vaxWarn(p) ? h('div',{class:'warn'}, h('b',{}, p.name+': '), vaxWarn(p)) : null);
+  // when they really came and went; tap to fix the time (the booked times stay as they are)
+  const when = (which, label, d, t) => h('button',{class:'lk', style:'display:block;padding:0;min-height:30px;text-align:left', onclick:()=>open({t:'when', id:s.id, which})},
+    h('b',{}, label+' '), d ? wmd(d)+', '+t12(t) : 'at the booked time', ' ›');
   return sheet(petNames(s), [
     h('div',{class:'card'},
       h('div',{class:'row'}, h('span',{class:'status', style:'background:'+statusColor(s)}, statusText(s)), h('b',{}, kennel(kennelAt(s, today(), nowHM())).name)),
@@ -1434,7 +1496,8 @@ function stayDetail(u){
         pieces(s).map((p, i) => (i ? ' → ' : '')+kennel(p.k).name+(i ? ' from '+md(p.d)+' '+t12(p.t) : '')).join('')+' ›'),
       h('div',{style:'margin-top:10px'}, h('b',{},'Drop-off '), wmd(s.start)+', '+t12(s.arr)),
       h('div',{}, h('b',{},'Pickup '), wmd(s.end)+', '+t12(s.pick)),
-      h('div',{class:'mut'}, n ? plural(n,'night') : 'Same-day stay'),
+      s.status!=='booked' && h('div',{style:'margin-top:6px'}, when('in', 'Checked in', s.inD, s.inT), s.status==='out' && when('out', 'Checked out', s.outD, s.outT)),
+      h('div',{class:'mut', style:dc ? 'font-weight:600;color:var(--ink)' : ''}, dc ? dc.long : n ? plural(n,'night') : 'Same-day stay'),
       c && h('button',{class:'lk', style:'padding:0;margin-top:4px', onclick:()=>open({t:'client',id:c.id})}, c.name+' family'+(bestPhone(c)?' · '+bestPhone(c):'')+' ›'),
       s.notes && h('div',{style:'margin-top:6px'}, s.notes)),
     warns,
@@ -1443,7 +1506,8 @@ function stayDetail(u){
       btn(s.paid ? '✓ Paid' : 'Mark paid', ()=>set('paid',!s.paid), 'chip'+(s.paid?' on':'')),
       btn('Owner report', ()=>open({t:'report', id:s.id}), 'chip'),
       s.status!=='out' && btn('Move kennel', ()=>open({t:'move', id:s.id}), 'chip'),
-      btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, moves:s.moves, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||''}}), 'chip'),
+      btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, moves:s.moves, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||'',
+        inD:s.inD, inT:s.inT, outD:s.outD, outT:s.outT}}), 'chip'),
 ),
     pets.map(p => [h('div',{class:'sec'}, p.name, btn('Edit pet', ()=>open({t:'pet', id:p.id, back:u}), 'lk')),
       petFacts(p), planReadOnly(p.plan)]),
@@ -1454,21 +1518,51 @@ function stayDetail(u){
     h('div',{style:'margin:24px 0 8px'}, btn('Delete stay', ()=>confirmSheet('Delete this stay?', petNames(s)+' in '+kennel(s.kennel).name+', '+md(s.start)+' – '+md(s.end)+'. Its check-offs are removed too.', 'Delete', ()=>{
       S.stays = S.stays.filter(x=>x!==s); for(const k in S.log) if(k.startsWith(s.id+'|')) delete S.log[k];
     }, u), 'lk bad'))
-  ], s.status==='booked' ? btn('Check in', ()=>set('status','in'))
-    : s.status==='in' ? [btn('Undo check-in', ()=>set('status','booked'), 'b2'), btn('Check out', ()=>open({t:'checkout', id:s.id}))]
-    : [btn('Undo check-out', ()=>set('status','in'), 'b2')]);
+  ], s.status==='booked' ? btn('Check in', ()=>{ checkIn(s); commit(); })
+    : s.status==='in' ? [btn('Undo check-in', ()=>{ undoCheckIn(s); commit(); }, 'b2'), btn('Check out', ()=>open({t:'checkout', id:s.id}))]
+    : [btn('Undo check-out', ()=>{ undoCheckOut(s); commit(); }, 'b2')]);
+}
+
+// fix when a pet really checked in or out (s.inD/inT, s.outD/outT)
+function whenSheet(u){
+  const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
+  const isIn = u.which==='in', bd = isIn ? s.start : s.end, bt = isIn ? s.arr : s.pick;
+  const f = u.f ||= {d:(isIn ? s.inD : s.outD) || bd, t:(isIn ? s.inT : s.outT) || bt};
+  const back = () => open({t:'stay', id:s.id});
+  const err = isIn ? (s.status==='out' && stamp(f.d, f.t) >= stayEnd(s) ? 'Check-in has to be before checkout.' : '')
+    : stamp(f.d, f.t) <= stayStart(s) ? 'Checkout has to be after check-in.' : '';
+  const save = () => { if(err) return; if(isIn){ s.inD = f.d; s.inT = f.t; } else { s.outD = f.d; s.outT = f.t; } back(); commit(); };
+  return sheet(isIn ? 'Checked in' : 'Checked out', [
+    h('div',{class:'row'},
+      field('Day', fieldBtn(wmd(f.d), 'Day', ()=>pickDate(isIn ? 'Checked in' : 'Checked out', f.d, v=>{ f.d = v; }))),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.t), 'Time', ()=>pickTime(isIn ? 'Checked in at' : 'Checked out at', f.t, v=>f.t = v, {now:true})))),
+    h('p',{class:'mut', style:'margin-top:-4px'}, 'Booked for '+wmd(bd)+', '+t12(bt)+'.'),
+    !(f.d===bd && f.t===bt) && btn('Use the booked time', ()=>{ f.d = bd; f.t = bt; render(); }, 'lk', {style:'padding:0'})
+  ], [err && h('div',{class:'err'}, err), btn('Cancel', back, 'b2'), btn('Save', save, 'b', {disabled:!!err})], back);
 }
 
 function checkoutSheet(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
-  const finish = paid => { s.status='out'; if(paid) s.paid=true; U.sh=null; commit(); };
+  // when they're leaving: now, unless she changes it. Leaving early frees the rest of the booked time.
+  const f = u.f ||= {d:today(), t:nowHM()};
+  const at = {...s, outD:f.d, outT:f.t};
+  const err = stamp(f.d, f.t) <= stayStart(s) ? 'Checkout has to be after check-in.' : '';
+  const early = !err && stayEnd(at) < stamp(s.end, s.pick), late = !err && stayEnd(at) > stamp(s.end, s.pick);
+  const finish = paid => { if(err) return; s.status='out'; s.outD = f.d; s.outT = f.t; if(paid) s.paid=true; U.sh=null; commit(); };
   const back = () => open({t:'stay', id:s.id});
   const R0 = S.rates || defaultRates();
-  return sheet('Check out '+petNames(s), [billCard(s, false),
+  const dc = dayCount({...at, status:'out'});
+  return sheet('Check out '+petNames(s), [
+    h('div',{class:'row'},
+      field('Leaving', fieldBtn(wmd(f.d), 'Day', ()=>pickDate('Leaving', f.d, v=>{ f.d = v; }))),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.t), 'Time', ()=>pickTime('Leaving at', f.t, v=>f.t = v, {now:true})))),
+    !err && h('p',{class:'mut', style:'margin-top:-4px'}, (early ? 'Early: booked until ' : late ? 'Late: booked until ' : 'Booked until ')+wmd(s.end)+', '+t12(s.pick)+'.'+(dc ? ' '+dc.long+'.' : '')),
+    err && h('div',{class:'err'}, err),
+    billCard(at, false),
     R0.card ? h('div',{style:'margin:10px 0'}, chip((s.card ? '✓ ' : '')+'Paying by card (+'+R0.card+'%)', !!s.card, ()=>{ s.card = !s.card; if(!s.card) delete s.card; commit(); })) : null,
     h('p',{}, s.paid ? 'This stay is already marked paid.' : 'Has this stay been paid?')],
-    s.paid ? [btn('Cancel', back, 'b2'), btn('Check out', ()=>finish(true))]
-           : [btn('Not yet', ()=>finish(false), 'b2'), btn('Paid', ()=>finish(true))], back);
+    s.paid ? [btn('Cancel', back, 'b2'), btn('Check out', ()=>finish(true), 'b', {disabled:!!err})]
+           : [btn('Not yet', ()=>finish(false), 'b2', {disabled:!!err}), btn('Paid', ()=>finish(true), 'b', {disabled:!!err})], back);
 }
 
 /* ============================== FAMILY (new and existing use the same sheet) ============================== */
@@ -2051,7 +2145,8 @@ function doneEditor(u){
 // What the owner gets at pickup: dates, what was done for each pet each day, a note, and what goes home.
 function reportPaper(s){
   const c = stayClient(s), pets = s.pets.map(i=>findPet(i)?.p).filter(Boolean);
-  const days = []; for(let D=s.start; D<=s.end; D=addDays(D,1)) days.push(D);
+  const days = []; for(let D=spanStart(s); D<=spanEnd(s); D=addDays(D,1)) days.push(D);
+  const a = realStart(s), b = realEnd(s);
   const dayBlocks = days.map(D => {
     const done = tasksFor(s,D).filter(it=>S.log[it.key]);
     if(!done.length) return null;
@@ -2069,8 +2164,8 @@ function reportPaper(s){
     h('h2',{}, BUSINESS),
     h('div',{class:'sub'}, 'Stay report'),
     h('h3',{}, petNames(s)+(c ? ' · '+((c.first?c.first+' ':'')+c.name) : '')),
-    h('div',{}, h('b',{},'Dropped off: '), wmd(s.start)+', '+t12(s.arr)),
-    h('div',{}, h('b',{},'Picked up: '), wmd(s.end)+', '+t12(s.pick)),
+    h('div',{}, h('b',{},'Dropped off: '), wmd(a.d)+', '+t12(a.t)),
+    h('div',{}, h('b',{},s.status==='out' ? 'Picked up: ' : 'Pickup: '), wmd(b.d)+', '+t12(b.t)),
     s.report && [h('h3',{},'A note from us'), h('div',{class:'msg'}, s.report)],
     h('h3',{},'Care during the stay'),
     dayBlocks.length ? dayBlocks : h('div',{class:'sub'},'No care was logged for this stay.'),
@@ -2133,7 +2228,7 @@ function setTheme(t){
    read publicly through site_content(). S.site stays empty until someone edits, so a
    phone that never opened the editor can't overwrite edits made on another one.
    Hours come from the booking rules, not from here. */
-const SITE_URL = 'https://lvpetlodge.com/';
+const SITE_URL = PREVIEW ? 'https://sufficingpit.github.io/lvpetlodge-preview/' : 'https://lvpetlodge.com/';
 function defaultSite(){
   const ph = (id, cap) => ({id, src:'img/'+id+'.jpg', sm:'img/'+id+'-sm.jpg', cap});
   return {v:1, notice:'',
@@ -2312,15 +2407,17 @@ const defaultRates = () => ({dog:25, cat:15, other:10, share:2, meds:2, card:2.6
 const money = n => { const a = Math.abs(Math.round(n*100)/100); return (n < 0 ? '−' : '')+'$'+(a % 1 ? a.toFixed(2) : a); };
 function billFor(s){
   const R0 = S.rates || defaultRates(), B = S.book, waived = new Set(s.waive||[]), lines = [];
-  const nights = Math.max(1, daysBetween(s.start, s.end));
+  // the real stay: a late arrival or early pickup is billed for the nights they were actually here
+  const a = realStart(s), b = realEnd(s);
+  const nights = Math.max(1, daysBetween(a.d, b.d));
   const pets = s.pets.map(id => findPet(id)?.p).filter(Boolean);
   pets.forEach(p => { const sp = p.species==='cat' ? 'cat' : p.species==='other' ? 'other' : 'dog';
     lines.push({key:'pet:'+p.id, label:p.name, sub:plural(nights,'night')+' × '+money(R0[sp]), amt:nights*R0[sp]}); });
   if(pets.length > 1 && R0.share) lines.push({key:'share', label:'Sharing a kennel', sub:pets.length+' pets × '+plural(nights,'night')+' × '+money(-R0.share), amt:-pets.length*nights*R0.share});
-  if(B.fee && offHours(s.start, s.arr)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(s.arr), amt:B.fee});
-  if(B.fee && offHours(s.end, s.pick)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(s.pick), amt:B.fee});
+  if(B.fee && offHours(a.d, a.t)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(a.t), amt:B.fee});
+  if(B.fee && offHours(b.d, b.t)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(b.t), amt:B.fee});
   // a late pickup: the kennel's used all day, like a late checkout (not on Sundays, when the hours are only evenings)
-  else if(B.eveFee && s.pick >= (B.eveFrom || '16:00') && parseD(s.end).getDay()!==0) lines.push({key:'eve', label:'Late pickup', sub:t12(s.pick), amt:B.eveFee});
+  else if(B.eveFee && b.t >= (B.eveFrom || '16:00') && parseD(b.d).getDay()!==0) lines.push({key:'eve', label:'Late pickup', sub:t12(b.t), amt:B.eveFee});
   lines.forEach(l => { l.auto = true; l.waived = waived.has(l.key); });
   (s.charges||[]).forEach(c => lines.push({id:c.id, label:c.label || (c.amt < 0 ? 'Discount' : 'Extra charge'), sub:c.qty > 1 ? c.qty+' × '+money(c.amt) : '', amt:c.amt*(c.qty||1)}));
   const sub = lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0);
@@ -2795,7 +2892,10 @@ function formSheet(u){
       line('Treats', p.treats==='yes' ? 'Yes'+(p.treatFav ? ', especially '+p.treatFav : '') : p.treats==='no' ? 'No, on a diet' : ''),
       line('Personality', (p.personality || []).join(', ')), line('Good with', (p.along || []).join(', ')),
       line('Also know', p.alsoKnow), line('Notes', p.notes), line('Likes', p.likes), line('Dislikes', p.dislikes),
-      line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)))]),
+      line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)),
+      formDocs(p).length > 0 && h('div',{}, h('b',{}, 'Vet records '), formDocs(p).map((d, i) => { const src = docSrc({id:d.path, path:d.path});
+        return [i ? ' · ' : '', src.url ? h('a',{href:src.url, target:'_blank', rel:'noopener'}, d.name || 'Vet record')
+          : h('span',{class:'mut'}, (d.name || 'Vet record')+(src.err ? ' (didn’t come through)' : ' (loading)'))]; })))]),
     h('div',{class:'sec'}, 'Waiver'),
     h('div',{class:'card'}, d.sign ? 'Agreed and signed by '+(d.sign.name || '')+(d.sign.date ? ', '+ymd(d.sign.date) : '') : 'Not signed',
       d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'}))],
@@ -2809,6 +2909,8 @@ function formSheet(u){
            saveForm(g, {status:'deleted'}); G.list = G.list.filter(x => x!==g); if(fc0){ unSigned(fc0, signDate(g)); U.sh = {t:'client', id:fc0.id}; } }, {t:'gform', id:g.id}), 'lk bad')])
   ], filed ? btn('Done', close) : [btn('Not now', close, 'b2'), btn('File it', ()=>fileForm(g, u.fam))]);
 }
+// photos or PDFs a customer sent with the guest form (lvpetlodge guest-form.html), in the docs bucket under forms/
+const formDocs = fp => (fp.docs || []).filter(d => d && /^forms\/[0-9a-f-]{36}\/\d-\d\.(jpg|pdf)$/i.test(d.path || ''));
 function fileForm(g, famId){
   const d = g.data || {}, O = d.owner || {}, snap = snapData(), prev = {status:g.status, client_id:g.client_id || null, filed_at:g.filed_at || null};
   let c = famId!=='new' && client(famId);
@@ -2831,6 +2933,9 @@ function fileForm(g, famId){
     if(fp.species==='other') put(p, 'other', fp.other);
     if((upd || !p.personality.length) && fp.personality?.length) p.personality = fp.personality.slice(0, 1);
     if((upd || !p.along.length) && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
+    // vet records they sent go on the pet's records (not ones that never finished uploading)
+    formDocs(fp).forEach(d => { if(docURLs[d.path]?.err || (p.docs || []).some(x => x.path===d.path)) return;
+      (p.docs ||= []).push({id:uid('d'), name:(d.name || 'Vet record').slice(0, 60), kind:d.kind==='pdf' ? 'pdf' : 'img', at:(g.created_at || '').slice(0, 10) || today(), path:d.path}); });
     const note = [fp.alsoKnow, fp.notes].map(x => (x || '').trim()).filter(Boolean).join('\n');
     if(note && !(p.notes || '').includes(note)) p.notes = p.notes ? p.notes+'\n'+note : note;
     // their meds join the pet's usual care, at any clock times they wrote (else as needed, until she sets them)
@@ -3453,7 +3558,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
   S[spKey(sp)] = draft; U.sh = null; commit();
 }
 
-const SHEETS = {merge:mergeSheet, fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, client:clientSheet,
+const SHEETS = {merge:mergeSheet, fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, when:whenSheet, client:clientSheet,
   pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
@@ -3531,6 +3636,7 @@ function demoForms(){
       sign:{name:'Jordan Price', date:today(), img:''}}}];
 }
 if(new URLSearchParams(location.search).get('tab')==='reqs'){ U.tab = 'reqs'; history.replaceState(null, '', location.pathname); }
+if(PREVIEW){ document.title += ' (preview)'; document.body.append(h('div',{class:'pvw', 'aria-label':'Preview copy'}, 'Preview')); }
 render();
 syncNow();   // catch up with other phones as soon as the app opens
 
