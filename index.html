@@ -585,9 +585,10 @@ const stayClient = s => findPet(s.pets[0])?.c;
    follow it. Within half an hour of the booked time on the booked day counts as on time. */
 const ON_TIME = 30;
 const onTime = (d, t, bd, bt) => d===bd && Math.abs(mins(t) - mins(bt)) <= ON_TIME;
-const realStart = s => s.inD && s.inT && !onTime(s.inD, s.inT, s.start, s.arr) ? {d:s.inD, t:s.inT} : {d:s.start, t:s.arr};
+// (only while checked in / out: an undo in an older copy of the app can leave the times behind)
+const realStart = s => s.status!=='booked' && s.inD && s.inT && !onTime(s.inD, s.inT, s.start, s.arr) ? {d:s.inD, t:s.inT} : {d:s.start, t:s.arr};
 const realEnd = s => { const a = realStart(s);
-  const b = s.outD && s.outT && !onTime(s.outD, s.outT, s.end, s.pick) ? {d:s.outD, t:s.outT} : {d:s.end, t:s.pick};
+  const b = s.status==='out' && s.outD && s.outT && !onTime(s.outD, s.outT, s.end, s.pick) ? {d:s.outD, t:s.outT} : {d:s.end, t:s.pick};
   return stamp(b.d, b.t) < stamp(a.d, a.t) ? a : b; };
 const stayStart = s => { const a = realStart(s); return stamp(a.d, a.t); }, stayEnd = s => { const b = realEnd(s); return stamp(b.d, b.t); };
 // first and last day the stay shows on: the booked days plus any real days outside them
@@ -1507,7 +1508,7 @@ function stayDetail(u){
       btn('Owner report', ()=>open({t:'report', id:s.id}), 'chip'),
       s.status!=='out' && btn('Move kennel', ()=>open({t:'move', id:s.id}), 'chip'),
       btn('Edit stay', ()=>open({t:'form', f:{id:s.id, kennel:s.kennel, moves:s.moves, client:c?.id||'', pets:[...s.pets], start:s.start, arr:s.arr, end:s.end, pick:s.pick, notes:s.notes, belongings:s.belongings||'',
-        inD:s.inD, inT:s.inT, outD:s.outD, outT:s.outT}}), 'chip'),
+        status:s.status, inD:s.inD, inT:s.inT, outD:s.outD, outT:s.outT}}), 'chip'),
 ),
     pets.map(p => [h('div',{class:'sec'}, p.name, btn('Edit pet', ()=>open({t:'pet', id:p.id, back:u}), 'lk')),
       petFacts(p), planReadOnly(p.plan)]),
@@ -1545,13 +1546,13 @@ function checkoutSheet(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
   // when they're leaving: now, unless she changes it. Leaving early frees the rest of the booked time.
   const f = u.f ||= {d:today(), t:nowHM()};
-  const at = {...s, outD:f.d, outT:f.t};
+  const at = {...s, status:'out', outD:f.d, outT:f.t};   // the stay as it'll be once checked out
   const err = stamp(f.d, f.t) <= stayStart(s) ? 'Checkout has to be after check-in.' : '';
   const early = !err && stayEnd(at) < stamp(s.end, s.pick), late = !err && stayEnd(at) > stamp(s.end, s.pick);
   const finish = paid => { if(err) return; s.status='out'; s.outD = f.d; s.outT = f.t; if(paid) s.paid=true; U.sh=null; commit(); };
   const back = () => open({t:'stay', id:s.id});
   const R0 = S.rates || defaultRates();
-  const dc = dayCount({...at, status:'out'});
+  const dc = dayCount(at);
   return sheet('Check out '+petNames(s), [
     h('div',{class:'row'},
       field('Leaving', fieldBtn(wmd(f.d), 'Day', ()=>pickDate('Leaving', f.d, v=>{ f.d = v; }))),
