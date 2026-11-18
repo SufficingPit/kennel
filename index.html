@@ -1747,15 +1747,14 @@ function formPages(g){
 function formRow(g, tag){
   return h('button',{class:'card row', onclick:()=>open({t:'gform', id:g.id})},
     h('span',{class:'grow'}, h('b',{}, g.mode==='pets' ? 'Pet page' : 'Guest form'),
-      h('div',{}, formPages(g)), h('div',{class:'mut'}, 'Sent '+ymd(formDate(g)))),
+      h('div',{}, formPages(g)), h('div',{class:'mut'}, 'Sent online · '+ymd(formDate(g)))),
     tag && h('span',{class:'pill'}, tag), h('span',{class:'chev'}, '›'));
 }
 function waiverRow(c, w, extra){
   return h('button',{class:'card row', style:'flex:1;min-width:0', onclick:()=>{ if(docURLs[w.id]?.err) delete docURLs[w.id]; open({t:'waiver', id:c.id, w:w.id}); }},
-    h('span',{class:'grow'}, h('b',{}, scanTitle(c, w)), h('div',{class:'mut'}, (w.kind==='pdf' ? 'PDF' : 'Photo')+(scanPage(w)==='waiver' ? ' · signed '+ymd(w.signed || w.at) : ' · added '+ymd(w.at)))),
+    h('span',{class:'grow'}, h('b',{}, scanTitle(c, w)), h('div',{class:'mut'}, 'Scanned '+(w.kind==='pdf' ? 'PDF' : 'photo')+(scanPage(w)==='waiver' ? ' · signed '+ymd(w.signed || w.at) : ' · added '+ymd(w.at)))),
     extra && h('span',{class:'pill'}, extra), h('span',{class:'chev'}, '›'));
 }
-const subhead = t => h('div',{class:'mut', style:'font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin:12px 0 6px'}, t);
 function familyForms(c){
   const {cur, waiver, scans, older} = formsOf(c), up = U.upl && U.upl.pet==='w'+c.id ? U.upl : null, showOld = U.oldf===c.id;
   // move a scanned page up one in her order
@@ -1763,18 +1762,17 @@ function familyForms(c){
   return [
     (n => n > 0 && h('button',{class:'card row', style:'border:1px solid var(--warn, #F59E0B)', onclick:()=>open({t:'fdiff', id:c.id})},
       h('span',{class:'grow'}, h('b',{}, 'Differs from their guest form'), h('div',{class:'mut'}, plural(n, 'detail')+' here aren’t what their form says. Review')), h('span',{class:'chev'}, '›')))(formDiffs(c).list.length),
-    subhead('Online'),
-    cur.length ? cur.map(g => formRow(g)) : h('p',{class:'mut', style:'margin:0 0 4px'}, 'Nothing sent online yet.'),
-    subhead('Paper (scanned)'),
-    scans.length ? scans.map((w, i) => h('div',{class:'row', style:'gap:6px;align-items:stretch'}, waiverRow(c, w),
-        scans.length > 1 && h('button',{class:'ic', style:'align-self:center', 'aria-label':'Move '+scanTitle(c, w)+' up', disabled:i===0, onclick:()=>moveUp(w, scans[i-1])}, '↑')))
-      : h('p',{class:'mut', style:'margin:0 0 4px'}, 'No scanned pages.'),
+    h('div',{style:'margin:0 0 10px;font-weight:600'}, waiver ? '✓ Signed waiver on file ('+(waiver.w ? 'paper' : 'online')+', '+ymd(waiver.date)+')'
+      : c.signed ? '✓ Waiver signed '+ymd(c.signed)+' (no copy on file)' : 'No signed waiver yet'),
+    cur.map(g => formRow(g)),
+    scans.map((w, i) => h('div',{class:'row', style:'gap:6px;align-items:stretch'}, waiverRow(c, w),
+        scans.length > 1 && h('button',{class:'ic', style:'align-self:center', 'aria-label':'Move '+scanTitle(c, w)+' up', disabled:i===0, onclick:()=>moveUp(w, scans[i-1])}, '↑'))),
+    !cur.length && !scans.length && h('p',{class:'mut', style:'margin:0 0 4px'}, 'Nothing on file yet. They can send the form online, or you can add a scanned page.'),
     up && !up.err ? h('p',{class:'mut'}, 'Uploading…')
       : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned page',
           h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addScans(c, [...e.target.files])})),
     up && up.err && h('p',{class:'err', style:'margin:8px 0 0'}, up.err),
-    h('div',{class:'mut', style:'margin:10px 0 0'}, waiver ? (waiver.w ? 'Signed waiver on file: paper, ' : 'Signed waiver on file: online, ')+ymd(waiver.date)+'.' : 'No signed waiver on file yet.'),
-    h('div',{class:'row wrap start', style:'margin-top:8px'},
+    h('div',{class:'row wrap start', style:'margin:8px 0 14px'},
       (t => t && h('a',{class:'chip', href:t}, cur.length ? 'Text a link to update it' : 'Text them the form link'))(formText(c, cur.length > 0)),
       cur.some(g => g.mode!=='pets')
         ? btn('Print their form', ()=>printPaper(currentPaper(cur), {}, 'Guest form '+(c.first ? c.first+' ' : '')+c.name), 'chip')
