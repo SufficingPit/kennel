@@ -76,7 +76,8 @@ grant execute on function public.request_status(uuid) to anon, authenticated;
 
 
 -- What a request still needs (form_needs, as in form-flow.sql), plus 'onFile': the newest vet record date
--- for each pet of a family we know, so the request page can say records are on file even on another phone.
+-- for each pet of a family we know, so the request page can say records are on file even on another phone,
+-- and 'formDate': when their guest form on file was last signed.
 create or replace function public.form_needs(p_phone text, p_pets jsonb, p_name text) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -120,7 +121,32 @@ begin
   select coalesce(jsonb_agg(trim(x->>'name')), '[]'::jsonb) into missing
     from jsonb_array_elements(coalesce(p_pets, '[]')) x
    where not (lower(trim(x->>'name')) = any(coalesce(have, '{}')));
-  return jsonb_build_object('family', true, 'newPets', missing, 'newPhone', by_name, 'onFile', onfile,
+  return jsonb_build_object('family', true, 'newPets', missing, 'newPhone', by_name, 'onFile', onfile, 'formDate', c->>'signed',
     'update', by_name or coalesce((c->>'formUpdate')::boolean, false));
 end $$;
 revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
+
+
+-- "Change it" on a waiting request cancels it and starts a new one. Records sent on the old one follow
+-- to the new one (same phone, matched to its pets by name; the files stay where they are).
+-- request-spot calls this with the old link's token (p.from) right after making the new request.
+create or replace function public.request_carry_docs(p_from uuid, p_to uuid) returns int
+language plpgsql volatile security definer set search_path = public as $$
+declare a requests; b requests; moved jsonb;
+begin
+  select * into a from requests where token = p_from;
+  select * into b from requests where token = p_to for update;
+  if a.id is null or b.id is null or a.id = b.id or a.status <> 'cancelled' or a.docs = '[]'::jsonb or b.created_at < a.created_at
+     or right(regexp_replace(a.phone, '\D', '', 'g'), 10) <> right(regexp_replace(b.phone, '\D', '', 'g'), 10) then
+    return 0;
+  end if;
+  select coalesce(jsonb_agg(jsonb_set(x, '{pet}', to_jsonb(np.i - 1))), '[]'::jsonb) into moved
+    from jsonb_array_elements(a.docs) x
+    join jsonb_array_elements(b.pets) with ordinality np(p, i)
+      on lower(btrim(np.p->>'name')) = lower(btrim(a.pets->((x->>'pet')::int)->>'name'))
+   where not exists (select 1 from jsonb_array_elements(b.docs) y where y->>'path' = x->>'path');
+  update requests set docs = docs || moved where id = b.id;
+  return jsonb_array_length(moved);
+end $$;
+revoke execute on function public.request_carry_docs(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.request_carry_docs(uuid, uuid) to service_role;

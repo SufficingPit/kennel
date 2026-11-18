@@ -54,6 +54,15 @@ Deno.serve(async (req) => {
   if (out?.ok) await notify(url, key, isForm ? formMsg(body.p) : requestMsg(body.p)).catch(() => {});
   // vet records sent with a guest form: one-time upload links into the private "docs" bucket
   if (out?.ok && isForm) out.uploads = await uploadLinks(url, key, body.p).catch(() => []);
+  // "Change it" on a request: records sent on the one they changed follow to the new one (request_carry_docs)
+  const from = String((body.p as Record<string, unknown>).from || "");
+  if (out?.ok && !isForm && out.token && /^[0-9a-f-]{36}$/i.test(from)) {
+    await fetch(url + "/rest/v1/rpc/request_carry_docs", {
+      method: "POST",
+      headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_from: from, p_to: out.token }),
+    }).catch(() => {});
+  }
   return reply(out);
 });
 
