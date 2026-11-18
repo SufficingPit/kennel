@@ -73,3 +73,54 @@ language sql stable security definer set search_path = public as $$
   where r.token = p_token
 $$;
 grant execute on function public.request_status(uuid) to anon, authenticated;
+
+
+-- What a request still needs (form_needs, as in form-flow.sql), plus 'onFile': the newest vet record date
+-- for each pet of a family we know, so the request page can say records are on file even on another phone.
+create or replace function public.form_needs(p_phone text, p_pets jsonb, p_name text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  d text := right(regexp_replace(coalesce(p_phone, ''), '\D', '', 'g'), 10);
+  nm text[] := regexp_split_to_array(lower(trim(coalesce(p_name, ''))), '\s+');
+  asked text[] := array(select lower(trim(x->>'name')) from jsonb_array_elements(coalesce(p_pets, '[]')) x);
+  c jsonb; have text[]; missing jsonb; by_name boolean := false; onfile jsonb := '[]';
+begin
+  if length(d) = 10 then
+    select r.data into c from records r
+     where r.kind = 'client' and not r.deleted and d in (
+       right(regexp_replace(coalesce(r.data->>'cell',  ''), '\D', '', 'g'), 10),
+       right(regexp_replace(coalesce(r.data->>'phone', ''), '\D', '', 'g'), 10),
+       right(regexp_replace(coalesce(r.data->>'work',  ''), '\D', '', 'g'), 10))
+     order by r.updated_at desc limit 1;
+  end if;
+  -- a new phone: same first and last name, and one of the pets they named
+  if c is null and array_length(nm, 1) >= 2 then
+    select r.data into c from records r
+     where r.kind = 'client' and not r.deleted
+       and lower(trim(coalesce(r.data->>'first', ''))) = nm[1]
+       and lower(trim(coalesce(r.data->>'name',  ''))) = nm[array_length(nm, 1)]
+       and exists (select 1 from jsonb_array_elements(coalesce(r.data->'pets', '[]')) q where lower(trim(q->>'name')) = any(asked))
+     order by r.updated_at desc limit 1;
+    by_name := c is not null;
+  end if;
+  -- the newest vet record on file for each pet they named (the date it was added): {pet: index into p_pets, at}
+  if c is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('pet', a.i - 1, 'at', m.at)), '[]'::jsonb) into onfile
+      from jsonb_array_elements(coalesce(p_pets, '[]')) with ordinality a(x, i),
+      lateral (select max(dd->>'at') at from jsonb_array_elements(coalesce(c->'pets', '[]')) q,
+                 jsonb_array_elements(case when jsonb_typeof(q->'docs') = 'array' then q->'docs' else '[]'::jsonb end) dd
+               where lower(trim(q->>'name')) = lower(trim(a.x->>'name')) and coalesce(dd->>'at', '') ~ '^\d{4}-\d\d-\d\d') m
+     where m.at is not null;
+  end if;
+  if c is null or coalesce(c->>'signed', '') = '' then
+    return jsonb_build_object('family', false, 'update', false, 'onFile', onfile,
+      'newPets', coalesce((select jsonb_agg(trim(x->>'name')) from jsonb_array_elements(coalesce(p_pets, '[]')) x), '[]'::jsonb));
+  end if;
+  select array_agg(lower(trim(x->>'name'))) into have from jsonb_array_elements(coalesce(c->'pets', '[]')) x;
+  select coalesce(jsonb_agg(trim(x->>'name')), '[]'::jsonb) into missing
+    from jsonb_array_elements(coalesce(p_pets, '[]')) x
+   where not (lower(trim(x->>'name')) = any(coalesce(have, '{}')));
+  return jsonb_build_object('family', true, 'newPets', missing, 'newPhone', by_name, 'onFile', onfile,
+    'update', by_name or coalesce((c->>'formUpdate')::boolean, false));
+end $$;
+revoke execute on function public.form_needs(text, jsonb, text) from public, anon, authenticated;
