@@ -68,8 +68,9 @@ button.card{width:100%;border:0;text-align:left}
 .frecs{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .frec{display:flex;align-items:center;gap:10px;margin-top:8px}
 .frec>button:first-child{display:flex;align-items:center;gap:10px;flex:1;min-width:0;min-height:48px;padding:0;background:none;border:0;color:inherit;text-align:left}
-.fpick{flex:none;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--field);background:var(--card);color:var(--mut);font-size:13px;font-weight:600}
-.fpick.on{background:var(--pri-soft);border-color:var(--pri);color:var(--ink)}
+.fpick{flex:none;min-height:36px;padding:0 10px;border-radius:18px;border:1px solid transparent;background:none;color:var(--mut);font-size:13px;font-weight:600}
+.fpick.on{border-color:var(--pri);background:var(--pri-soft);color:var(--ink)}
+.frec.off>button:first-child{opacity:.45}
 .docimg{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#fff;margin:4px 0 12px}
 .row.start{justify-content:flex-start}
 .wrap{flex-wrap:wrap}
@@ -2975,12 +2976,12 @@ const filedDoc = (g, fp, d) => { const c = g.client_id && client(g.client_id), n
   const p = c && c.pets.find(x => x.name.toLowerCase()===nm); return p && (p.docs || []).find(x => x.path===d.path) ? p : null; };
 function formDocRow(g, fp, d, filed){
   const src = formDocSrc(d), nm = d.name || 'Vet record', on = !skipDoc.has(d.path);
-  const state = src.err ? 'Didn’t come through' : !src.url ? 'Loading…' : (d.kind==='pdf' ? 'PDF' : 'Photo');
-  return h('div',{class:'frec'},
+  const state = src.err ? 'Didn’t come through' : !src.url ? 'Loading…' : (d.kind==='pdf' ? 'PDF' : 'Photo')+(!filed && !on ? ' · left off' : '');
+  return h('div',{class:'frec'+(!filed && !on && !src.err ? ' off' : '')},
     h('button',{onclick:()=>{ if(docURLs[d.path]?.err) delete docURLs[d.path]; open({t:'formdoc', id:g.id, path:d.path}); }},
       docThumb(src, d.kind), h('span',{style:'min-width:0'}, h('div',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'}, nm), h('div',{class:'mut'}, state))),
     filed ? h('span',{class:'mut', style:'flex:none'}, filedDoc(g, fp, d) ? 'On '+(fp.name || 'the pet')+'’s records' : 'Not filed')
-      : !src.err && h('button',{class:'fpick'+(on ? ' on' : ''), 'aria-pressed':String(on), onclick:()=>{ on ? skipDoc.add(d.path) : skipDoc.delete(d.path); render(); }}, on ? '✓ File it' : 'Skip'));
+      : !src.err && h('button',{class:'fpick'+(on ? '' : ' on'), onclick:()=>{ on ? skipDoc.add(d.path) : skipDoc.delete(d.path); render(); }}, on ? 'Leave off' : 'Include'));
 }
 // one record from a guest form, big, before it's filed
 function formDocSheet(u){
@@ -2995,8 +2996,9 @@ function formDocSheet(u){
          d.kind==='pdf' && h('iframe',{src:src.url, title:d.name || 'Vet record', style:'display:block;width:100%;height:60vh;border:1px solid var(--line);border-radius:10px;background:#fff;margin:4px 0 12px'}),
          h('a',{class:'b2 sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:src.url, target:'_blank', rel:'noopener'}, d.kind==='pdf' ? 'Open PDF' : 'Open full size')],
     filed ? h('p',{class:'mut', style:'margin-top:18px'}, filedDoc(g, fp, d) ? 'On '+(fp.name || 'the pet')+'’s records.' : 'Not on '+(fp.name || 'the pet')+'’s records.')
-      : !src.err && h('div',{style:'margin-top:18px'}, h('button',{class:'fpick'+(on ? ' on' : ''), 'aria-pressed':String(on), onclick:()=>{ on ? skipDoc.add(d.path) : skipDoc.delete(d.path); render(); }},
-          on ? '✓ Goes on '+(fp.name || 'the pet')+'’s records when filed' : 'Skipped: won’t go on '+(fp.name || 'the pet')+'’s records'))
+      : !src.err && h('div',{class:'row', style:'margin-top:18px;gap:10px'},
+          h('span',{class:'mut grow'}, on ? 'Goes on '+(fp.name || 'the pet')+'’s records when you file the form.' : 'Left off. It won’t go on '+(fp.name || 'the pet')+'’s records.'),
+          h('button',{class:'fpick'+(on ? '' : ' on'), onclick:()=>{ on ? skipDoc.add(d.path) : skipDoc.delete(d.path); render(); }}, on ? 'Leave off' : 'Include'))
   ], btn('Back to the form', back), back);
 }
 function fileForm(g, famId){
