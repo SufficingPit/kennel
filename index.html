@@ -2302,7 +2302,7 @@ function defaultSite(){
     about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska north of Funk. We accept most any small pet, not just dogs and cats! We provide a safe place to house your fur, feather, or scaly babies when you are away from home for whatever reason.\n\nOwner Ashleigh Jauken operates the facility mostly by herself, but now has three young sons in tow. You’ll probably see Kaleb, Kolby, Kolt, or all three as she works. She has always loved all animals and has experience with many pets throughout her life. She went to Nebraska College of Technical Agriculture and studied to become a vet tech. Although she didn’t quite make it to a licensed vet tech, she still graduated with a Degree of Applied Animal Science.\n\nAshleigh came up with the name Little Village Pet Lodge from the facility’s location. It’s just north of Funk, Nebraska, which is officially called the Village of Funk. “I thought it would be fun to call my business Little Village because of its location near Funk. Plus, there are hopefully going to be many different animals staying there, like a village would, so why not Little Village?” Ashleigh says. The Lodge part of the name also comes from where the property is. “When you think lodge, you usually think of a place out in the country, and my little pet village is out in the country, so it made perfect sense to say lodge at the end instead of boarding. And that’s how Little Village Pet Lodge was named!”',
     groomer:'Do you or someone you know groom animals? Need somewhere to operate? Little Village is looking for a groomer to rent space here at the lodge! Call, text, or email for more information!',
     aboutPhoto:'lookup', aboutCap:'LOOK UP THERE!',
-    treatsIntro:'We offer DIY dog treat mixes. Ask for one when you drop off or pick up, and pay when you get it.', treats:[],
+    treatsIntro:'We offer dog treat mixes. Ask for one when you drop off or pick up, and pay when you get it.', treats:[],
     phone:'(308) 233-2652', email:'littlevillagepetlodge@outlook.com',
     facebook:'https://www.facebook.com/Little-Village-Pet-Lodge-109671294113263/',
     address:'11841 740 Road, Funk, NE 68940',
@@ -2336,6 +2336,7 @@ function photoPicker(W, key, builtins){
 
 function siteSheet(u){
   const W = S.site || (u.draft ||= defaultSite());
+  W.treats ||= []; W.treatsIntro ??= defaultSite().treatsIntro;   // sites saved before treat mixes existed
   const sv = () => { S.site = W; U.siteSaved = Date.now(); save(); quietRender(); };
   const redraw = () => { S.site = W; U.siteSaved = Date.now(); save(); render(); };
   const g = (id, title, summary, body) => group('w-'+id, title, summary, body);
@@ -2367,8 +2368,9 @@ function siteSheet(u){
       h('p',{class:'mut', style:'margin-top:0'}, 'The website shows the per-night prices and fees from Settings, Rates, the same ones used for bills and the request page’s estimate. Change them there.'),
       tf(W,'payNote','Payment note',sv,{area:true, ph:'e.g. We take cards through Square.'}),
       help('The card fee percent in this note is filled in from Rates.')]),
-    g('treats','Treat mixes', (W.treats ||= []).length ? W.treats.map(t => t.name || 'No name yet').join(', ') : 'None yet', [
-      help('Treat mixes for sale, picked up and paid for here. The website shows this section once there’s at least one.'),
+    g('treats','Treat mixes', W.treatsOff ? 'Hidden' : W.treats.length ? W.treats.map(t => t.name || 'No name yet').join(', ') : 'None yet', [
+      field('On the website', seg([['on','Shown'],['off','Hidden']], W.treatsOff ? 'off' : 'on', v=>{ W.treatsOff = v==='off'; redraw(); })),
+      help(W.treatsOff ? 'The whole section is hidden. Your mixes are kept for when you show it again.' : 'Add as many as you like. The section shows once there’s at least one with a name.'),
       tf(W,'treatsIntro','Intro',sv,{area:true}),
       W.treats.map((t, i) => { const busy = U.upl && U.upl.pet==='treat:'+t.id && !U.upl.err;
         return h('div',{class:'card'},
