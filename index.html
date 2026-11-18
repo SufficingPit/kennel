@@ -2378,7 +2378,7 @@ function siteSheet(u){
             h('label',{class:'tpic', 'aria-label':t.src ? 'Change the photo' : 'Add a photo'},
               busy ? 'Uploading…' : t.src ? h('img',{src:sitePhotoURL(t.sm || t.src), alt:''}) : '+ Photo',
               h('input',{type:'file', accept:'image/*', style:'display:none', onchange:e=>e.target.files[0] && setTreatPhoto(W, t, e.target.files[0])})),
-            h('div',{style:'flex:1;min-width:0'}, tf(t,'name','Name',sv,{ph:'e.g. Peanut Butter Pumpkin'}), tf(t,'price','Price',sv,{ph:'e.g. $8'}))),
+            h('div',{style:'flex:1;min-width:0'}, tf(t,'name','Name',sv), tf(t,'price','Price',sv,{ph:'e.g. $8'}))),
           U.upl && U.upl.pet==='treat:'+t.id && U.upl.err && h('p',{class:'err', style:'margin:0 0 8px'}, U.upl.err),
           tf(t,'desc','Description',sv,{area:true, ph:'What’s in it, how many treats it makes'}),
           h('div',{class:'row start wrap'},
