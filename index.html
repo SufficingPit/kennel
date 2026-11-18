@@ -594,7 +594,9 @@ const onTime = (d, t, bd, bt) => d===bd && Math.abs(mins(t) - mins(bt)) <= ON_TI
 // (only while checked in / out: an undo in an older copy of the app can leave the times behind)
 const realStart = s => s.status!=='booked' && s.inD && s.inT && !onTime(s.inD, s.inT, s.start, s.arr) ? {d:s.inD, t:s.inT} : {d:s.start, t:s.arr};
 const realEnd = s => { const a = realStart(s);
-  const b = s.status==='out' && s.outD && s.outT && !onTime(s.outD, s.outT, s.end, s.pick) ? {d:s.outD, t:s.outT} : {d:s.end, t:s.pick};
+  let b = s.status==='out' && s.outD && s.outT && !onTime(s.outD, s.outT, s.end, s.pick) ? {d:s.outD, t:s.outT} : {d:s.end, t:s.pick};
+  // still here after the booked pickup: the stay runs on until they're checked out
+  if(s.status==='in' && stamp(today(), nowHM()) > stamp(b.d, b.t)) b = {d:today(), t:nowHM()};
   return stamp(b.d, b.t) < stamp(a.d, a.t) ? a : b; };
 const stayStart = s => { const a = realStart(s); return stamp(a.d, a.t); }, stayEnd = s => { const b = realEnd(s); return stamp(b.d, b.t); };
 // first and last day the stay shows on: the booked days plus any real days outside them
@@ -607,9 +609,10 @@ function dayCount(s){
   const nights = ' ('+plural(n,'night')+')';
   if(s.status==='out') return n < 1 ? {long:'Same-day stay'} : days===booked ? {long:'Here '+days+' days'+nights}
     : {short: days+'/'+booked, long:'Here '+days+' of '+booked+' days'+nights};
-  if(n < 1) return null;   // a same-day stay has nothing to count
-  const k = daysBetween(a.d, td) + 1;
-  return {short: k+'/'+days, long: 'Day '+k+' of '+days+(td > b.d ? ', past pickup' : td===b.d ? ', going home today' : nights)};
+  const planned = Math.max(1, daysBetween(a.d, s.end) + 1), k = daysBetween(a.d, td) + 1;   // booked pickup day, counted from the real arrival
+  if(planned < 2 && k < 2) return null;   // a same-day stay has nothing to count
+  return {short: k+'/'+planned, long: td > s.end ? 'Day '+k+', still here after the booked pickup ('+wmd(s.end)+', '+t12(s.pick)+')'
+    : 'Day '+k+' of '+planned+(td===s.end ? ', going home today' : ' ('+plural(planned-1,'night')+')')};
 }
 function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); }
 // Check in from a button. Arriving early can run into the pet before them in the same kennel: ask first.
@@ -997,7 +1000,7 @@ function calView(){
     if(stamp(a.d, a.t) > stamp(s.start, s.arr)) out.push({k:s.kennel, d:s.start, t:s.arr, e:a.d, et:a.t});
     if(stamp(b.d, b.t) < stamp(s.end, s.pick)) out.push({k:ps[ps.length-1].k, d:b.d, t:b.t, e:s.end, et:s.pick});
     return out.filter(g => g.k!=='own'); };
-  let anyUnused = false;
+  let anyUnused = false, anyExtra = false;
   // which kennel rows to show: all, ones with a stay in view, or ones with a pet in them right now
   const inView = S.kennels.filter(k => viewStays.some(s => pieces(s).some(p => p.k===k.id && p.d<=end && p.e>=w)));
   const hereNow = S.kennels.filter(k => S.stays.some(s => s.status==='in' && kennelAt(s, td, nowHM())===k.id));
@@ -1034,9 +1037,16 @@ function calView(){
       const r = (pc.d<w || moved ? '0' : '6px'), rr = (pc.e>end || moves ? '0' : '6px');
       const pos = `left:calc(${a*100}% + 1px);width:calc(${width*100}% - 2px);`;
       const dc = dayCount(s);
+      // time outside the booking (arrived early, or still here after the booked pickup): a lighter shade, with a line at the booked time
+      const frac = (D, T) => (daysBetween(w, D) + calFrac(T))/n, ext = [];
+      const cut = x => Math.max(0, Math.min(100, (x - a)/width*100)).toFixed(2);
+      if(stamp(pc.d, pc.t) < stamp(s.start, s.arr) && stamp(s.start, s.arr) < stamp(pc.e, pc.et)){ const x = cut(frac(s.start, s.arr)); anyExtra = true;
+        ext.push(`linear-gradient(to right, var(--xt) 0 ${x}%, rgba(255,255,255,.8) ${x}% calc(${x}% + 1.5px), transparent calc(${x}% + 1.5px))`); }
+      if(stamp(pc.d, pc.t) < stamp(s.end, s.pick) && stamp(s.end, s.pick) < stamp(pc.e, pc.et)){ const x = cut(frac(s.end, s.pick)); anyExtra = true;
+        ext.push(`linear-gradient(to right, transparent calc(${x}% - 1.5px), rgba(255,255,255,.8) calc(${x}% - 1.5px) ${x}%, var(--xt) ${x}%)`); }
       lane.append(h('button',{class:'bar'+(late?' late':''),
         'aria-label':withFam(s)+', '+statusText(s)+(late?', not checked in yet':'')+(dc ? ', '+dc.long : ''),
-        style:pos+`background:${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
+        style:pos+`--xt:color-mix(in srgb, ${statusColor(s)} 62%, #fff);background:${ext.length ? ext.join(',')+',' : ''}${statusColor(s)};border-radius:${r} ${rr} ${rr} ${r}`,
         onclick:()=>open({t:'stay', id:s.id})},
         h('span',{class:'bl mqw'}, h('span',{class:'mq'}, dc?.short && h('span',{class:'dc'}, dc.short), h('span',{class:'nm'}, pc.d<w ? '‹ ' : moved ? '↪ ' : '', petNames(s)), calDots(s), S.showFam!==false && famOf(s) && h('span',{class:'fam'}, famOf(s)))), pc.e>end && h('span',{class:'arr'},'›')));
       const marks = [];
@@ -1103,7 +1113,8 @@ function calView(){
     shown.some(k => viewStays.some(s => pieces(s).some(p => p.k===k.id))) && [h('div',{class:'lg'},
       [['#1D4ED8','Booked'],['#0F766E','In kennel'],['#4B5563','Out, paid'],['#B45309','Out, unpaid']].map(([c,t]) => h('span',{}, h('span',{class:'sw',style:'background:'+c}), t)),
       h('span',{}, h('span',{class:'sw',style:'outline:2px dashed var(--bad);outline-offset:-1px'}),'Not checked in yet'),
-      anyUnused && h('span',{}, h('span',{class:'sw ghostsw'}),'Booked, not used')),
+      anyUnused && h('span',{}, h('span',{class:'sw ghostsw'}),'Booked, not used'),
+      anyExtra && h('span',{}, h('span',{class:'sw', style:'background:linear-gradient(to right, color-mix(in srgb, #0F766E 62%, #fff) 0 50%, #0F766E 50%)'}),'Early or past pickup')),
     calTags.length>0 && h('div',{class:'lg'}, h('span',{},'Care:'),
       calTags.map(t => h('span',{}, h('span',{class:'sw', style:'width:3px;height:10px;border-radius:2px;background:'+t.color}), t.name)), h('span',{},'(faded = done)'))]
   ];
@@ -1192,7 +1203,8 @@ function dayView(){
 
   // arriving: booked for this day, plus (today) any that were due earlier and haven't come yet
   const arrivals = S.stays.filter(s => s.status==='booked' && (s.start===D || (D===td && s.start<D && s.end>=D))).sort((a,b)=>stayStart(a)<stayStart(b)?-1:1);
-  const pickups = S.stays.filter(s => s.end===D && s.status==='in').sort((a,b)=>a.pick<b.pick?-1:1);
+  // going home: due this day, plus (today) any still here after an earlier booked pickup
+  const pickups = S.stays.filter(s => s.status==='in' && (s.end===D || (D===td && s.end<D))).sort((a,b)=>stamp(a.end,a.pick)<stamp(b.end,b.pick)?-1:1);
   const items = staysOn(D).filter(s=>s.status!=='booked').flatMap(s=>tasksFor(s,D)).filter(it=>it.s.status==='in' || S.log[it.key])
     .sort((a,b)=> a.tm<b.tm ? -1 : a.tm>b.tm ? 1 : kennelOrder(a.s,b.s));
   const lateN = items.filter(isLate).length;
@@ -1203,7 +1215,7 @@ function dayView(){
 
   const stayLine = (s, action) => h('div',{class:'card row'},
     h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
-      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? (s.start<D ? 'was due '+wmd(s.start)+', '+t12(s.arr) : 'drop-off '+t12(s.arr)) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
+      h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? (s.start<D ? 'was due '+wmd(s.start)+', '+t12(s.arr) : 'drop-off '+t12(s.arr)) : (s.end<D ? 'pickup was '+wmd(s.end)+', '+t12(s.pick) : 'pickup '+t12(s.pick)))+(action==='out'&&!s.paid?' · unpaid':''))),
     action==='in' ? btn('Check in', ()=>tryCheckIn(s), 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
 
   // to-do first, grouped by time; finished items fold into one collapsible section
@@ -2428,7 +2440,7 @@ const money = n => { const a = Math.abs(Math.round(n*100)/100); return (n < 0 ? 
 function billFor(s){
   const R0 = S.rates || defaultRates(), B = S.book, waived = new Set(s.waive||[]), lines = [];
   // the real stay: a late arrival or early pickup is billed for the nights they were actually here
-  const a = realStart(s), b = realEnd(s);
+  const a = realStart(s), b = s.status==='out' ? realEnd(s) : {d:s.end, t:s.pick};   // booked pickup until they've gone
   const nights = Math.max(1, daysBetween(a.d, b.d));
   const pets = s.pets.map(id => findPet(id)?.p).filter(Boolean);
   pets.forEach(p => { const sp = p.species==='cat' ? 'cat' : p.species==='other' ? 'other' : 'dog';
