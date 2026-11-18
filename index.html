@@ -593,15 +593,17 @@ const realEnd = s => { const a = realStart(s);
 const stayStart = s => { const a = realStart(s); return stamp(a.d, a.t); }, stayEnd = s => { const b = realEnd(s); return stamp(b.d, b.t); };
 // first and last day the stay shows on: the booked days plus any real days outside them
 const spanStart = s => realStart(s).d < s.start ? realStart(s).d : s.start, spanEnd = s => realEnd(s).d > s.end ? realEnd(s).d : s.end;
-// how many nights it was or will be, and (while in) which day of the stay it is
+// Which day of the stay it is, counted in calendar days like the bar: drop-off day is day 1, pickup day the last.
+// From the real arrival, so a late arrival doesn't leave a skipped day in the count. Nights are added where money is.
 function dayCount(s){
   if(s.status==='booked') return null;
-  const a = realStart(s), b = realEnd(s), n = daysBetween(a.d, b.d), booked = daysBetween(s.start, s.end), td = today();
-  if(s.status==='out') return n===booked ? {long: n ? 'Stayed '+plural(n,'night') : 'Same-day stay'}
-    : {short: n+'/'+booked, long: 'Stayed '+plural(n,'night')+', booked '+booked};
-  if(n < 1 && td <= b.d) return null;
-  const k = daysBetween(a.d, td) + (td < b.d ? 1 : 0);
-  return {short: k+'/'+n, long: td > b.d ? 'Day '+k+' of '+n+', past pickup' : td===b.d ? 'Day '+n+' of '+n+', going home today' : 'Day '+k+' of '+n};
+  const a = realStart(s), b = realEnd(s), n = daysBetween(a.d, b.d), days = n + 1, booked = daysBetween(s.start, s.end) + 1, td = today();
+  const nights = ' ('+plural(n,'night')+')';
+  if(s.status==='out') return n < 1 ? {long:'Same-day stay'} : days===booked ? {long:'Here '+days+' days'+nights}
+    : {short: days+'/'+booked, long:'Here '+days+' of '+booked+' days'+nights};
+  if(n < 1) return null;   // a same-day stay has nothing to count
+  const k = daysBetween(a.d, td) + 1;
+  return {short: k+'/'+days, long: 'Day '+k+' of '+days+(td > b.d ? ', past pickup' : td===b.d ? ', going home today' : nights)};
 }
 function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); }
 function undoCheckIn(s){ s.status = 'booked'; delete s.inD; delete s.inT; delete s.outD; delete s.outT; }
