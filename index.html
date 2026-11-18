@@ -546,6 +546,12 @@ function seed(){
       {id:'meds',name:'Meds',color:'#F59E0B'}],
     clients, stays, log:{}};
 
+  // the sample statuses follow the clock: nobody is in before their drop-off time or out before their pickup
+  const nowStamp = stamp(today(), nowHM());
+  for(const s of stays){
+    if(s.status!=='booked' && stamp(s.start, s.arr) > nowStamp) s.status = 'booked';
+    if(s.status==='out' && stamp(s.end, s.pick) > nowStamp) s.status = 'in';
+  }
   // Fill in check-offs up to now so the demo looks like a normal day, leaving one thing overdue to show it off.
   const prev = S; S = data;
   const nowS = stamp(today(), nowHM());
@@ -606,6 +612,17 @@ function dayCount(s){
   return {short: k+'/'+days, long: 'Day '+k+' of '+days+(td > b.d ? ', past pickup' : td===b.d ? ', going home today' : nights)};
 }
 function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); }
+// Check in from a button. Arriving early can run into the pet before them in the same kennel: ask first.
+// back: the sheet to show afterwards (or none)
+function tryCheckIn(s, back){
+  const c = {...s, status:'in', inD:today(), inT:nowHM()}, mine = pieces(c);
+  const hit = S.stays.find(o => o.id!==s.id && o.status!=='out' && pieces(o).some(q => mine.some(p => p.k!=='own' && p.k===q.k && piecesOverlap(p, q))));
+  const go = () => { checkIn(s); if(back) U.sh = back; };
+  if(!hit){ go(); commit(); return; }
+  const e = realEnd(hit), k = kennel(mine.find(p => pieces(hit).some(q => q.k===p.k))?.k || s.kennel).name;
+  confirmSheet(k+' isn’t free yet', withFam(hit)+(hit.status==='in' ? ' is still in it' : ' is booked in it')+' until '+wmd(e.d)+', '+t12(e.t)+'. Check '+petNames(s)+' in anyway? You can move either one to another kennel from their stay.',
+    'Check in anyway', go, back || null);
+}
 function undoCheckIn(s){ s.status = 'booked'; delete s.inD; delete s.inT; delete s.outD; delete s.outT; }
 function undoCheckOut(s){ s.status = 'in'; delete s.outD; delete s.outT; }
 const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
@@ -1187,7 +1204,7 @@ function dayView(){
   const stayLine = (s, action) => h('div',{class:'card row'},
     h('button',{style:'flex:1;min-width:0;border:0;background:none;padding:0;text-align:left', onclick:()=>open({t:'stay',id:s.id})},
       h('b',{}, withFam(s)), h('div',{class:'mut'}, kennel(action==='in' ? s.kennel : kennelAt(s, s.end, s.pick)).name+' · '+(action==='in' ? (s.start<D ? 'was due '+wmd(s.start)+', '+t12(s.arr) : 'drop-off '+t12(s.arr)) : 'pickup '+t12(s.pick))+(action==='out'&&!s.paid?' · unpaid':''))),
-    action==='in' ? btn('Check in', ()=>{ checkIn(s); commit(); }, 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
+    action==='in' ? btn('Check in', ()=>tryCheckIn(s), 'b sm') : btn('Check out', ()=>open({t:'checkout', id:s.id}), 'b sm'));
 
   // to-do first, grouped by time; finished items fold into one collapsible section
   const byTime = list => { const gs = []; for(const it of list){ const g = gs[gs.length-1]; if(g && g.tm===it.tm) g.items.push(it); else gs.push({tm:it.tm, items:[it]}); } return gs; };
@@ -1521,7 +1538,7 @@ function stayDetail(u){
     h('div',{style:'margin:24px 0 8px'}, btn('Delete stay', ()=>confirmSheet('Delete this stay?', petNames(s)+' in '+kennel(s.kennel).name+', '+md(s.start)+' – '+md(s.end)+'. Its check-offs are removed too.', 'Delete', ()=>{
       S.stays = S.stays.filter(x=>x!==s); for(const k in S.log) if(k.startsWith(s.id+'|')) delete S.log[k];
     }, u), 'lk bad'))
-  ], s.status==='booked' ? btn('Check in', ()=>{ checkIn(s); commit(); })
+  ], s.status==='booked' ? btn('Check in', ()=>tryCheckIn(s, {t:'stay', id:s.id}))
     : s.status==='in' ? [btn('Undo check-in', ()=>{ undoCheckIn(s); commit(); }, 'b2'), btn('Check out', ()=>open({t:'checkout', id:s.id}))]
     : [btn('Undo check-out', ()=>{ undoCheckOut(s); commit(); }, 'b2')]);
 }
