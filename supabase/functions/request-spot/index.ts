@@ -5,6 +5,8 @@
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase automatically.
 //    Or, with kind "form", calls guest_form_submit() for a new guest form filled out online,
 //    and returns one-time upload links for any vet records sent with it (uploadLinks below).
+//    Or, with kind "records", adds vet records to a stay request from its page (request_add_docs)
+//    and returns upload links for them.
 // 3. Sends a notification to every phone that turned them on (push_subs), if the secret
 //    VAPID_PRIVATE is set. A failed notification never fails the request.
 import webpush from "npm:web-push@3.6.7";
@@ -41,6 +43,7 @@ Deno.serve(async (req) => {
   if (!check.success) return reply({ ok: false, reason: "The human check didn’t go through. Please try it again.", retry: true }, 400);
 
   const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  if (body.kind === "records") return reply(await requestRecords(url, key, body.p as Record<string, any>));
   const r = await fetch(url + "/rest/v1/rpc/" + (isForm ? "guest_form_submit" : "request_spot"), {
     method: "POST",
     headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
@@ -65,14 +68,34 @@ async function uploadLinks(url: string, key: string, p: Record<string, any>) {
       const path = String(d?.path || "");
       if (path === `forms/${fk}/${i}-${j}.${d?.kind === "pdf" ? "pdf" : "jpg"}`) want.push(path);
     }));
-  return (await Promise.all(want.map(async (path) => {
-    const r = await fetch(`${url}/storage/v1/object/upload/sign/docs/${path}`, {
-      method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: "{}",
-    });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return j?.url ? { path, url: url + "/storage/v1" + j.url } : null;
-  }))).filter(Boolean);
+  return (await Promise.all(want.map((path) => signUpload(url, key, path)))).filter(Boolean);
+}
+// a one-time link to upload one new file to the private "docs" bucket (it can't replace a file)
+async function signUpload(url: string, key: string, path: string) {
+  const r = await fetch(`${url}/storage/v1/object/upload/sign/docs/${path}`, {
+    method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: "{}",
+  });
+  if (!r.ok) return null;
+  const j = await r.json();
+  return j?.url ? { path, url: url + "/storage/v1" + j.url } : null;
+}
+// Vet records sent from a stay request's page: p = {req: the request's token, docs: [{ix, pet, name, kind}]}.
+// The database checks the request is still open and picks each file's path.
+async function requestRecords(url: string, key: string, p: Record<string, any>) {
+  const tok = String(p.req || "");
+  if (!/^[0-9a-f-]{36}$/i.test(tok) || !Array.isArray(p.docs)) return { ok: false, reason: "Bad request." };
+  const r = await fetch(url + "/rest/v1/rpc/request_add_docs", {
+    method: "POST",
+    headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_token: tok, p_docs: p.docs.slice(0, 9) }),
+  });
+  if (!r.ok) return { ok: false, reason: "Couldn’t send. Please try again." };
+  const out = await r.json();
+  if (!out?.ok) return out;
+  await notify(url, key, { title: "Vet records: " + String(out.name || "").trim(), body: String(out.pets || ""), tag: "records-" }).catch(() => {});
+  const docs = (out.docs || []) as { pet: number; ix: unknown; name: string; kind: string; path: string }[];
+  const uploads = (await Promise.all(docs.map((d) => signUpload(url, key, d.path)))).filter(Boolean);
+  return { ok: true, docs: docs.map((d) => ({ pet: d.pet, ix: d.ix, name: d.name, kind: d.kind, path: d.path })), uploads };
 }
 
 const md = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });

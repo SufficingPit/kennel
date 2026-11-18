@@ -2773,6 +2773,7 @@ function reqCard(r){
     h('div',{class:'row'}, h('b',{}, r.name), r.status!=='pending' ? h('span',{class:'pill'+(r.status==='approved' ? ' ok' : '')}, r.status==='approved' ? 'Approved' : r.status==='declined' ? 'Declined' : 'Cancelled')
       : null),
     h('div',{}, md(r.start_date)+' – '+md(r.end_date)+' · '+plural(n,'night')+' · '+reqPetsText(r)),
+    reqDocs(r).length > 0 && h('div',{class:'mut'}, plural(reqDocs(r).length, 'vet record')),
     h('div',{class:'mut'}, r.status==='pending' ? 'Sent '+ago(r.created_at) : r.status==='cancelled' ? 'Cancelled by them' : 'Answered '+ago(r.answered_at)));
 }
 // Request and guest form notifications stay on the phone until tapped or swiped. Clear them once
@@ -3103,6 +3104,9 @@ function reqSheet(u){
         p.note && h('div',{class:'mut', style:'white-space:pre-wrap'}, 'Note: '+p.note))),
       r.pets.length > 1 && h('div',{class:'mut', style:'margin-top:4px'}, reqShareText(r)),
       h('div',{class:'mut', style:'margin-top:4px'}, r.own_food ? 'Bringing their own food' : 'Using your food')),
+    reqDocs(r).length > 0 && [h('div',{class:'sec'},'Vet records'), h('div',{class:'card'},
+      r.status==='pending' && h('div',{class:'mut'}, 'Approving puts these on each pet’s page, under Health & vaccines.'),
+      reqDocs(r).map(d => reqDocRow(r, d)))],
     h('div',{class:'sec'},'Contact'),
     h('div',{class:'card'},
       h('div',{class:'row'}, h('span',{}, fmtPhone(r.phone)), h('span',{class:'row start'},
@@ -3126,6 +3130,49 @@ function reqSheet(u){
   ], r.status==='pending' ? [btn('Decline', ()=>open({t:'reqans', id:r.id, act:'decline'}), 'b2'), btn('Approve', ()=>{ U.flow = {kind:'req', id:r.id, stack:[{data:snapData(), sheet:{t:'req', id:r.id, fam:u.fam, how:u.how}}]}; approveReq(r, u.fam); })] : btn('Done', close));
 }
 
+/* Vet records sent from the request's page (requests.docs: [{pet (index into r.pets), name, kind, path, at}],
+   files in the docs bucket under requests/<request id>/). Approving puts them on the pets; ones sent
+   after that show "Add to <pet>" on the request. */
+const reqDocs = r => (r.docs || []).filter(d => d && Number.isInteger(d.pet) && r.pets[d.pet] && /^requests\/[0-9a-f-]{36}\/\d{1,2}-\d\.(jpg|pdf)$/i.test(d.path || ''));
+// the pet a request's record belongs to, once the request is booked (found through its stays)
+function reqPetFor(r, d){
+  const nm = lc(r.pets[d.pet]?.name);
+  for(const sid of reqStays(r)) for(const id of S.stays.find(x => x.id===sid).pets){ const f = findPet(id); if(f && lc(f.p.name)===nm) return f.p; }
+  return null;
+}
+const reqDocOn = (r, d) => { const p = reqPetFor(r, d), x = p && (p.docs || []).find(y => y.path===d.path); return x ? {p, x} : null; };
+function addReqDoc(r, d, p){
+  if((p.docs || []).some(x => x.path===d.path)) return;
+  (p.docs ||= []).push({id:uid('d'), name:(d.name || 'Vet record').slice(0, 60), kind:d.kind==='pdf' ? 'pdf' : 'img',
+    at:String(d.at || r.created_at || '').slice(0, 10) || today(), path:d.path, ...(DEMO && d.data ? {data:d.data} : {})});
+}
+function reqDocRow(r, d){
+  const src = docSrc({id:d.path, path:d.path, data:d.data}), nm = (r.pets[d.pet]?.name || '').trim() || 'their pet';
+  const on = reqDocOn(r, d), to = !on && r.status==='approved' && reqPetFor(r, d), left = skipDoc.has(d.path);
+  const state = src.err ? 'Didn’t come through' : !src.url ? 'Loading…' : (d.kind==='pdf' ? 'PDF' : 'Photo')+' for '+nm+(r.status==='pending' && left ? ' · left off' : '');
+  return h('div',{class:'frec'+(r.status==='pending' && left && !src.err ? ' off' : '')},
+    h('button',{onclick:()=>{ if(docURLs[d.path]?.err) delete docURLs[d.path];
+        open(on ? {t:'doc', pet:on.p.id, doc:on.x.id, back:{t:'req', id:r.id}} : {t:'reqdoc', id:r.id, path:d.path}); }},
+      docThumb(src, d.kind), h('span',{style:'min-width:0'}, h('div',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'}, on ? on.x.name : d.name || 'Vet record'), h('div',{class:'mut'}, state))),
+    on ? h('span',{class:'mut', style:'flex:none'}, 'On '+on.p.name+'’s page')
+      : src.err ? null
+      : r.status==='pending' ? h('button',{class:'fpick'+(left ? ' on' : ''), onclick:()=>{ left ? skipDoc.delete(d.path) : skipDoc.add(d.path); render(); }}, left ? 'Include' : 'Leave off')
+      : to ? h('button',{class:'fpick on', onclick:()=>{ addReqDoc(r, d, to); commit(); toast('Added to '+to.name+'’s page, under Health & vaccines.'); }}, 'Add to '+to.name)
+      : null);
+}
+// one record from a request, big
+function reqDocSheet(u){
+  const r = R.list.find(x => x.id===u.id), d = r && reqDocs(r).find(x => x.path===u.path);
+  if(!d) return null;
+  const back = () => open({t:'req', id:r.id}), src = docSrc({id:d.path, path:d.path, data:d.data}), nm = (r.pets[d.pet]?.name || '').trim() || 'their pet';
+  return sheet(d.name || 'Vet record', [
+    h('p',{class:'mut', style:'margin-top:0'}, (d.kind==='pdf' ? 'PDF' : 'Photo')+' for '+nm+', sent from their request page'+(d.at ? ', '+ymd(String(d.at).slice(0, 10)) : '')+'.'),
+    src.err ? h('p',{class:'err'}, 'This one didn’t come through. They can send it again from their request page.') : !src.url ? h('p',{class:'mut'},'Loading…')
+      : [d.kind==='img' && h('img',{class:'docimg', src:src.url, alt:d.name || 'Vet record'}),
+         d.kind==='pdf' && h('iframe',{src:src.url, title:d.name || 'Vet record', style:'display:block;width:100%;height:60vh;border:1px solid var(--line);border-radius:10px;background:#fff;margin:4px 0 12px'}),
+         h('a',{class:'b2 sm', style:'display:inline-flex;align-items:center;text-decoration:none', href:src.url, target:'_blank', rel:'noopener'}, d.kind==='pdf' ? 'Open PDF' : 'Open full size')]
+  ], btn('Back to the request', back), back);
+}
 // Approve: make the family and pets if needed, then book one stay per kennel needed
 function approveReq(r, famId){
   let c = famId!=='new' && client(famId);
@@ -3139,6 +3186,8 @@ function approveReq(r, famId){
     if(note && !(q.notes || '').includes(note)) q.notes = q.notes ? q.notes+'\n'+note : note;
     return q.id;
   });
+  reqDocs(r).forEach(d => { const q = ids[d.pet] && findPet(ids[d.pet])?.p;
+    if(q && !skipDoc.has(d.path) && !docURLs[d.path]?.err) addReqDoc(r, d, q); });
   save();
   r._ids = ids;
   r._own = ids.filter((id, i) => r.pets[i].species==='other' && r.pets[i].cage!==false);   // brought their own cage
@@ -3275,7 +3324,10 @@ function demoRequests(){
   const at = h => new Date(Date.now() - h*3600e3).toISOString();
   return [
     {id:uid('r'), created_at:at(3), status:'pending', start_date:addDays(today(), 9), end_date:addDays(today(), 14), arr:'08:30', pick:'16:30', dog_spots:1, cat_spots:0,
-      name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi', group:'A'},{name:'Hazel', species:'dog', breed:'Golden mix', group:'A'}], share:true, notes:'Same as last time, thank you!'},
+      name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi', group:'A'},{name:'Hazel', species:'dog', breed:'Golden mix', group:'A'}], share:true, notes:'Same as last time, thank you!',
+      docs:[{pet:0, name:'Vet record', kind:'img', path:'requests/00000000-0000-4000-8000-0000000000a1/0-0.jpg', at:at(2), data:demoShotRecord('Tucker').data},
+            {pet:1, name:'Hazel shots', kind:'pdf', path:'requests/00000000-0000-4000-8000-0000000000a1/1-0.pdf', at:at(2),
+             data:demoPdf('Vaccination Record (sample)', ['Maple Creek Vet Clinic, 555-0100', 'Patient: Hazel, Golden mix', 'Rabies, DHPP, Bordetella: up to date', 'Made-up demo record'])}]},
     {id:uid('r'), created_at:at(20), status:'pending', start_date:addDays(today(), 4), end_date:addDays(today(), 7), arr:'12:00', pick:'17:00', dog_spots:1, cat_spots:1,
       name:'Priya Shah', phone:'555-0177', email:'priya@example.com', pets:[{name:'Mochi', species:'dog', breed:'Shiba Inu', group:'A'},{name:'Koji', species:'dog', breed:'Shiba Inu', group:'B'},{name:'Pepper', species:'cat', breed:'', group:'C'}], dog_spots:2, share:false, notes:'Mochi and Koji don’t get along, separate kennels please.'}];
 }
@@ -3653,7 +3705,7 @@ function finishTpl(draft, applyToPets, sp = 'dog'){
 }
 
 const SHEETS = {merge:mergeSheet, fdiff:formDiffSheet, waiver:waiverSheet, tpl:tplSheet, tplapply:tplApplySheet, kennel:kennelSheet, kennelrm:kennelRemoveSheet, range:rangeSheet, report:reportSheet, form:stayForm, stay:stayDetail, checkout:checkoutSheet, when:whenSheet, client:clientSheet,
-  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, formdoc:formDocSheet, reqans:reqAnsSheet};
+  pet:petSheet, tag:tagSheet, deltag:delTagSheet, confirm:confirmView, done:doneEditor, doc:docSheet, hours:hoursSheet, closed:closedSheet, site:siteSheet, sitephoto:sitePhotoSheet, reqdel:reqDelSheet, charge:chargeSheet, move:moveSheet, req:reqSheet, gform:formSheet, formdoc:formDocSheet, reqdoc:reqDocSheet, reqans:reqAnsSheet};
 
 /* ============================== RENDER ============================== */
 const ICONS = {
