@@ -1768,7 +1768,7 @@ function familyForms(c){
     subhead('Paper (scanned)'),
     scans.length ? scans.map((w, i) => h('div',{class:'row', style:'gap:6px;align-items:stretch'}, waiverRow(c, w),
         scans.length > 1 && h('button',{class:'ic', style:'align-self:center', 'aria-label':'Move '+scanTitle(c, w)+' up', disabled:i===0, onclick:()=>moveUp(w, scans[i-1])}, '↑')))
-      : h('p',{class:'mut', style:'margin:0 0 4px'}, 'No scanned pages. If they filled it out on paper, take a picture of each page.'),
+      : h('p',{class:'mut', style:'margin:0 0 4px'}, 'No scanned pages.'),
     up && !up.err ? h('p',{class:'mut'}, 'Uploading…')
       : h('label',{class:'b2 sm', style:'display:inline-flex;align-items:center;cursor:pointer'}, '+ Add a scanned page',
           h('input',{type:'file', accept:'image/*,application/pdf', style:'display:none', onchange:e=>addScans(c, [...e.target.files])})),
@@ -2952,7 +2952,9 @@ function formSheet(u){
       line('Personality', (p.personality || []).join(', ')), line('Good with', (p.along || []).join(', ')),
       line('Also know', p.alsoKnow), line('Notes', p.notes), line('Likes', p.likes), line('Dislikes', p.dislikes),
       line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)),
-      formDocs(p).length > 0 && h('div',{class:'frecs'}, h('b',{}, 'Vet records'), formDocs(p).map(d => formDocRow(g, p, d, filed))))]),
+      (ds => ds.length > 0 && h('div',{class:'frecs'}, h('b',{}, 'Vet records'),
+        !filed && h('div',{class:'mut'}, 'Filing puts these on '+(p.name || 'the pet')+'’s page, under Health & vaccines.'),
+        ds.map(d => formDocRow(g, p, d, filed))))(filed ? formDocs(p).filter(d => filedDoc(g, p, d)) : formDocs(p)))]),
     h('div',{class:'sec'}, 'Waiver'),
     h('div',{class:'card'}, d.sign ? 'Agreed and signed by '+(d.sign.name || '')+(d.sign.date ? ', '+ymd(d.sign.date) : '') : 'Not signed',
       d.sign?.img && h('img',{src:d.sign.img, alt:'Signature', style:'display:block;width:100%;max-width:340px;height:76px;object-fit:contain;background:#fff;border-radius:8px;margin-top:8px'}))],
@@ -2973,14 +2975,15 @@ const docThumb = (src, kind) => h('span',{class:'dthumb'}, src.err ? '!' : kind=
 const skipDoc = new Set();   // records she chose to leave off the pet when filing (this visit only)
 // the filed pet that has this record, if any
 const filedDoc = (g, fp, d) => { const c = g.client_id && client(g.client_id), nm = (fp.name || '').trim().toLowerCase();
-  const p = c && c.pets.find(x => x.name.toLowerCase()===nm); return p && (p.docs || []).find(x => x.path===d.path) ? p : null; };
+  const p = c && c.pets.find(x => x.name.toLowerCase()===nm), r = p && (p.docs || []).find(x => x.path===d.path); return r ? {p, r} : null; };
 function formDocRow(g, fp, d, filed){
   const src = formDocSrc(d), nm = d.name || 'Vet record', on = !skipDoc.has(d.path);
   const state = src.err ? 'Didn’t come through' : !src.url ? 'Loading…' : (d.kind==='pdf' ? 'PDF' : 'Photo')+(!filed && !on ? ' · left off' : '');
   return h('div',{class:'frec'+(!filed && !on && !src.err ? ' off' : '')},
-    h('button',{onclick:()=>{ if(docURLs[d.path]?.err) delete docURLs[d.path]; open({t:'formdoc', id:g.id, path:d.path}); }},
-      docThumb(src, d.kind), h('span',{style:'min-width:0'}, h('div',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'}, nm), h('div',{class:'mut'}, state))),
-    filed ? h('span',{class:'mut', style:'flex:none'}, filedDoc(g, fp, d) ? 'On '+(fp.name || 'the pet')+'’s records' : 'Not filed')
+    h('button',{onclick:()=>{ if(docURLs[d.path]?.err) delete docURLs[d.path]; const f = filed && filedDoc(g, fp, d);
+        open(f ? {t:'doc', pet:f.p.id, doc:f.r.id, back:{t:'gform', id:g.id}} : {t:'formdoc', id:g.id, path:d.path}); }},
+      docThumb(src, d.kind), h('span',{style:'min-width:0'}, h('div',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'}, filed ? filedDoc(g, fp, d).r.name : nm), h('div',{class:'mut'}, state))),
+    filed ? h('span',{class:'mut', style:'flex:none'}, 'On '+(fp.name || 'the pet')+'’s page')
       : !src.err && h('button',{class:'fpick'+(on ? '' : ' on'), onclick:()=>{ on ? skipDoc.add(d.path) : skipDoc.delete(d.path); render(); }}, on ? 'Leave off' : 'Include'));
 }
 // one record from a guest form, big, before it's filed
@@ -3032,6 +3035,8 @@ function fileForm(g, famId){
     (fp.meds || []).forEach(m => { const t = [m.name, m.dose, m.freq, m.instr].map(x => (x || '').trim()).filter(Boolean).join(', ');
       if(t && !p.plan.some(x => x.tag==='meds' && x.note===t)) p.plan.push(task('meds', medTimes([m.freq, m.instr].join(' ')), t)); });
   });
+  const recs = (d.pets || []).flatMap(fp => formDocs(fp).filter(x => filedDoc({client_id:c.id}, fp, x)).map(() => (fp.name || '').trim()));
+  if(recs.length) setTimeout(() => toast(plural(recs.length, 'vet record')+' added to '+[...new Set(recs)].join(' and ')+'’s page, under Health & vaccines.'), 50);
   if(g.mode!=='pets') delete c.formUpdate;   // she asked for an update and got it
   saveForm(g, {status:'filed', client_id:c.id, filed_at:new Date().toISOString()});
   U.flow = {kind:'form', id:g.id, fam:c.id, stack:[{data:snap, sheet:{t:'gform', id:g.id}, prev}]};
