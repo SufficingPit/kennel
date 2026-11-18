@@ -49,6 +49,8 @@ button.card{width:100%;border:0;text-align:left}
 .docrow{display:flex;align-items:center;gap:10px;min-height:48px}
 .stepr{display:flex;align-items:center;gap:10px}
 .stv{min-width:120px;text-align:center;font-weight:600}
+.tpic{flex:none;width:96px;height:96px;margin-top:22px;border-radius:12px;border:2px dashed var(--line);display:grid;place-items:center;overflow:hidden;cursor:pointer;color:var(--mut);font-size:13px;font-weight:600;text-align:center;background:var(--card)}
+.tpic img{width:100%;height:100%;object-fit:cover;display:block}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
 .pgrid button{position:relative;padding:0;border:2px solid transparent;border-radius:12px;overflow:hidden;aspect-ratio:1/1;background:var(--card)}
 .pgrid button.on{border-color:var(--pri);box-shadow:0 0 0 2px var(--pri)}
@@ -2300,6 +2302,7 @@ function defaultSite(){
     about:'Little Village Pet Lodge is a pet boarding facility in rural Nebraska north of Funk. We accept most any small pet, not just dogs and cats! We provide a safe place to house your fur, feather, or scaly babies when you are away from home for whatever reason.\n\nOwner Ashleigh Jauken operates the facility mostly by herself, but now has three young sons in tow. You’ll probably see Kaleb, Kolby, Kolt, or all three as she works. She has always loved all animals and has experience with many pets throughout her life. She went to Nebraska College of Technical Agriculture and studied to become a vet tech. Although she didn’t quite make it to a licensed vet tech, she still graduated with a Degree of Applied Animal Science.\n\nAshleigh came up with the name Little Village Pet Lodge from the facility’s location. It’s just north of Funk, Nebraska, which is officially called the Village of Funk. “I thought it would be fun to call my business Little Village because of its location near Funk. Plus, there are hopefully going to be many different animals staying there, like a village would, so why not Little Village?” Ashleigh says. The Lodge part of the name also comes from where the property is. “When you think lodge, you usually think of a place out in the country, and my little pet village is out in the country, so it made perfect sense to say lodge at the end instead of boarding. And that’s how Little Village Pet Lodge was named!”',
     groomer:'Do you or someone you know groom animals? Need somewhere to operate? Little Village is looking for a groomer to rent space here at the lodge! Call, text, or email for more information!',
     aboutPhoto:'lookup', aboutCap:'LOOK UP THERE!',
+    treatsIntro:'Make your own dog treats at home with our DIY mixes. Ask for one when you drop off or pick up, and pay when you get it.', treats:[],
     phone:'(308) 233-2652', email:'littlevillagepetlodge@outlook.com',
     facebook:'https://www.facebook.com/Little-Village-Pet-Lodge-109671294113263/',
     address:'11841 740 Road, Funk, NE 68940',
@@ -2364,6 +2367,24 @@ function siteSheet(u){
       h('p',{class:'mut', style:'margin-top:0'}, 'The website shows the per-night prices and fees from Settings, Rates, the same ones used for bills and the request page’s estimate. Change them there.'),
       tf(W,'payNote','Payment note',sv,{area:true, ph:'e.g. We take cards through Square.'}),
       help('The card fee percent in this note is filled in from Rates.')]),
+    g('treats','Treat mixes', (W.treats ||= []).length ? W.treats.map(t => t.name || 'No name yet').join(', ') : 'None yet', [
+      help('Treat mixes for sale, picked up and paid for here. The website shows this section once there’s at least one.'),
+      tf(W,'treatsIntro','Intro',sv,{area:true}),
+      W.treats.map((t, i) => { const busy = U.upl && U.upl.pet==='treat:'+t.id && !U.upl.err;
+        return h('div',{class:'card'},
+          h('div',{class:'row', style:'align-items:flex-start;gap:12px'},
+            h('label',{class:'tpic', 'aria-label':t.src ? 'Change the photo' : 'Add a photo'},
+              busy ? 'Uploading…' : t.src ? h('img',{src:sitePhotoURL(t.sm || t.src), alt:''}) : '+ Photo',
+              h('input',{type:'file', accept:'image/*', style:'display:none', onchange:e=>e.target.files[0] && setTreatPhoto(W, t, e.target.files[0])})),
+            h('div',{style:'flex:1;min-width:0'}, tf(t,'name','Name',sv,{ph:'e.g. Peanut Butter Pumpkin'}), tf(t,'price','Price',sv,{ph:'e.g. $8'}))),
+          U.upl && U.upl.pet==='treat:'+t.id && U.upl.err && h('p',{class:'err', style:'margin:0 0 8px'}, U.upl.err),
+          tf(t,'desc','Description',sv,{area:true, ph:'What’s in it, what to add at home, how many it makes'}),
+          h('div',{class:'row start wrap'},
+            h('button',{class:'chip', 'aria-pressed':t.out ? 'true' : 'false', onclick:()=>{ t.out = !t.out; redraw(); }}, t.out ? h('span',{style:'display:inline-flex;align-items:center;gap:5px'}, check(), 'Sold out') : 'Mark sold out'),
+            btn('Move up', ()=>{ [W.treats[i-1], W.treats[i]] = [W.treats[i], W.treats[i-1]]; redraw(); }, 'chip', {disabled:i===0}),
+            btn('Remove', ()=>confirmSheet('Remove '+(t.name || 'this treat mix')+'?', 'Takes it off the website.', 'Remove', ()=>{ W.treats.splice(i, 1); S.site = W; U.sh = {t:'site'}; }, u), 'lk bad')));
+      }),
+      btn('+ Add a treat mix', ()=>{ W.treats.push({id:uid('t'), name:'', price:'', desc:''}); redraw(); }, 'chip add')]),
     false && g('pricesOld','', '', [
       h('div',{class:'lbl mut', style:'font-weight:700;font-size:13px;margin:0 0 8px'},'Per night'),
       colHead(['Name','flex:1'], ['Per','width:78px'], ['Price','width:62px'], ['','width:32px']),
@@ -2428,6 +2449,23 @@ function sitePhotoSheet(u){
   ], btn('Done', back), back);
 }
 
+// a treat mix's photo, into the same public bucket as the gallery photos
+async function setTreatPhoto(W, t, f){
+  const key = 'treat:'+t.id;
+  if(!/^image\//.test(f.type)){ U.upl = {pet:key, err:'Only photos can be added.'}; return render(); }
+  U.upl = {pet:key}; render();
+  try {
+    const big = await shrinkImage(f, 1200), small = await shrinkImage(f, 480), id = uid('w');
+    if(DEMO){ t.src = await asDataURL(small); t.sm = t.src; }
+    else {
+      for(const [name, blob] of [[id+'.jpg', big], [id+'-sm.jpg', small]])
+        await storage('object/site/'+name, {method:'POST', headers:{'Content-Type':'image/jpeg', 'x-upsert':'false'}, body:blob});
+      t.src = SUPA.url+'/storage/v1/object/public/site/'+id+'.jpg'; t.sm = SUPA.url+'/storage/v1/object/public/site/'+id+'-sm.jpg';
+    }
+    S.site = W; U.siteSaved = Date.now(); save(); U.upl = null;
+  } catch(e){ U.upl = {pet:key, err:'Couldn’t upload. Check the signal and try again.'}; }
+  render();
+}
 async function addSitePhotos(W, files){
   if(!files.length) return;
   U.upl = {pet:'site'}; render();
