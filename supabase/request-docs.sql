@@ -44,7 +44,8 @@ end $$;
 revoke execute on function public.request_add_docs(uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.request_add_docs(uuid, jsonb) to service_role;
 
--- The request's status page, as in form-flow.sql, plus the records already sent ('docs': pet, name, kind).
+-- The request's status page, as in form-flow.sql, plus the records already sent ('docs': pet, name, kind, form):
+-- ones sent on this page, and ones sent with a guest form from this request (matched to its pets by name, form: true).
 create or replace function public.request_status(p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   -- a request past the auto-decline time reads as declined, with her message
@@ -53,7 +54,14 @@ language sql stable security definer set search_path = public as $$
   jsonb_build_object('status', case when timed then 'declined' else r.status end,
     'start', r.start_date, 'end', r.end_date, 'arr', r.arr, 'pick', r.pick, 'pets', r.pets,
     'reply', case when timed then coalesce(nullif(b->>'autoMsg',''), 'Sorry, we weren’t able to get back to you in time. Please call or text us to book.') else r.reply end,
-    'docs', (select coalesce(jsonb_agg(jsonb_build_object('pet', x->'pet', 'name', x->'name', 'kind', x->'kind')), '[]'::jsonb) from jsonb_array_elements(r.docs) x),
+    'docs', (select coalesce(jsonb_agg(z.d), '[]'::jsonb) from (
+        select jsonb_build_object('pet', x->'pet', 'name', x->'name', 'kind', x->'kind') d from jsonb_array_elements(r.docs) x
+        union all
+        select jsonb_build_object('pet', rp.i - 1, 'name', fd->'name', 'kind', fd->'kind', 'form', true)
+        from guest_forms g, jsonb_array_elements(coalesce(g.data->'pets', '[]'::jsonb)) fp,
+             jsonb_array_elements(case when jsonb_typeof(fp->'docs') = 'array' then fp->'docs' else '[]'::jsonb end) fd,
+             jsonb_array_elements(r.pets) with ordinality rp(p, i)
+        where g.req_token = r.token and g.status <> 'deleted' and lower(btrim(fp->>'name')) = lower(btrim(rp.p->>'name'))) z),
     'form', case when not timed and r.status in ('pending', 'approved') and r.end_date >= public.book_today(b)
       then public.form_needs(r.phone, r.pets, r.name)
            || jsonb_build_object('sent', exists(select 1 from guest_forms g where g.status <> 'deleted' and (g.req_token = r.token
