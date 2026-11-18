@@ -80,10 +80,16 @@ $$;
 -- Stays that use a kennel: (kennel, first night, end date). A stay that moved kennels
 -- partway through (data.moves = [{date, time, kennel}]) counts in each kennel for its part:
 -- the night of a move day belongs to the new kennel.
+-- A pet checked in early (data.inD before the booked start) holds the kennel from that day; one still in
+-- after its booked pickup day holds it through tonight. A checked-out stay holds nothing.
 create or replace function public.book_stays() returns table(kid text, s date, e date)
 language sql stable security definer set search_path = public as $$
-  with st as (select id, data, (data->>'start')::date s0, (data->>'end')::date e0
-              from records where kind='stay' and not deleted and coalesce(data->>'status','') <> 'out'),
+  with td as (select book_today(book_rules()) d),
+  st as (select id, data,
+                case when data->>'status' = 'in' and coalesce(data->>'inD','') ~ '^\d{4}-\d\d-\d\d$'
+                     then least((data->>'start')::date, (data->>'inD')::date) else (data->>'start')::date end s0,
+                case when data->>'status' = 'in' and (data->>'end')::date < td.d then td.d + 1 else (data->>'end')::date end e0
+              from records, td where kind='stay' and not deleted and coalesce(data->>'status','') <> 'out'),
   pts as (select id, e0, data->>'kennel' k, s0 d from st
           union all
           select id, e0, m->>'kennel', (m->>'date')::date from st, jsonb_array_elements(coalesce(data->'moves','[]'::jsonb)) m

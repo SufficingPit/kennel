@@ -451,19 +451,33 @@ function migrate(d){
 }
 
 // a made-up vaccine certificate for the demo (fake clinic, fake numbers)
-function demoShotRecord(name){
+function demoShotRecord(name, breed = 'Corgi', species = 'Canine'){
   const d = n => ymd(addDays(today(), n));
   const rows = [['Rabies (3 year)', d(-240), d(-240+1095)], ['DHPP', d(-240), d(-240+365)], ['Bordetella', d(-60), d(-60+365)], ['Leptospirosis', d(-240), d(-240+365)]];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420" font-family="Georgia, serif" fill="#222">
 <rect width="600" height="420" fill="#fffdf7"/><rect x="14" y="14" width="572" height="392" fill="none" stroke="#0F766E" stroke-width="3"/>
 <text x="300" y="62" text-anchor="middle" font-size="26" font-weight="bold">Certificate of Vaccination</text>
 <text x="300" y="90" text-anchor="middle" font-size="15" fill="#555">Maple Creek Vet Clinic · 555-0100</text>
-<text x="44" y="135" font-size="16">Patient: <tspan font-weight="bold">${name}</tspan>    Species: Canine    Breed: Corgi</text>
+<text x="44" y="135" font-size="16">Patient: <tspan font-weight="bold">${name}</tspan>    Species: ${species}    Breed: ${breed}</text>
 <line x1="44" y1="160" x2="556" y2="160" stroke="#999"/>
 <text font-size="14" font-weight="bold"><tspan x="44" y="185">Vaccine</tspan><tspan x="270" y="185">Given</tspan><tspan x="420" y="185">Due</tspan></text>
 ${rows.map((r,i) => `<text font-size="15" y="${218+i*32}"><tspan x="44">${r[0]}</tspan><tspan x="270">${r[1]}</tspan><tspan x="420">${r[2]}</tspan></text>`).join('')}
 <text x="44" y="380" font-size="14" fill="#555">Signed: Dr. Sample, DVM (demo record)</text></svg>`;
   return {id:uid('d'), name:'Vaccine certificate', kind:'img', at:addDays(today(), -60), data:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)};
+}
+function demoPdf(title, lines){
+  const esc = t => t.replace(/[\\()]/g, m => '\\'+m);
+  const text = ['BT /F1 20 Tf 60 740 Td ('+esc(title)+') Tj ET']
+    .concat(lines.map((l, i) => 'BT /F1 13 Tf 60 '+(700 - i*24)+' Td ('+esc(l)+') Tj ET')).join('\n');
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    '<< /Length '+text.length+' >>\nstream\n'+text+'\nendstream', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  let out = '%PDF-1.4\n'; const at = [];
+  objs.forEach((o, i) => { at.push(out.length); out += (i+1)+' 0 obj\n'+o+'\nendobj\n'; });
+  const x = out.length;
+  out += 'xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n'+at.map(n => String(n).padStart(10,'0')+' 00000 n \n').join('')
+    +'trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+x+'\n%%EOF';
+  return 'data:application/pdf;base64,'+btoa(out);
 }
 function seed(){
   const kennels = [...Array(16)].map((_,i)=>({id:'k'+(i+1), name:'D'+(i+1)}))
@@ -614,7 +628,7 @@ function dayCount(s){
   return {short: k+'/'+planned, long: td > s.end ? 'Day '+k+', still here after the booked pickup ('+wmd(s.end)+', '+t12(s.pick)+')'
     : 'Day '+k+' of '+planned+(td===s.end ? ', going home today' : ' ('+plural(planned-1,'night')+')')};
 }
-function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); }
+function checkIn(s){ s.status = 'in'; s.inD = today(); s.inT = nowHM(); delete s.inSet; }
 // Check in from a button. Arriving early can run into the pet before them in the same kennel: ask first.
 // back: the sheet to show afterwards (or none)
 function tryCheckIn(s, back){
@@ -626,8 +640,8 @@ function tryCheckIn(s, back){
   confirmSheet(k+' isn’t free yet', withFam(hit)+(hit.status==='in' ? ' is still in it' : ' is booked in it')+' until '+wmd(e.d)+', '+t12(e.t)+'. Check '+petNames(s)+' in anyway? You can move either one to another kennel from their stay.',
     'Check in anyway', go, back || null);
 }
-function undoCheckIn(s){ s.status = 'booked'; delete s.inD; delete s.inT; delete s.outD; delete s.outT; }
-function undoCheckOut(s){ s.status = 'in'; delete s.outD; delete s.outT; }
+function undoCheckIn(s){ s.status = 'booked'; ['inD','inT','inSet','outD','outT','outSet'].forEach(k => delete s[k]); }
+function undoCheckOut(s){ s.status = 'in'; ['outD','outT','outSet'].forEach(k => delete s[k]); }
 const overlaps = (a,b) => stayStart(a) < stayEnd(b) && stayStart(b) < stayEnd(a);
 const clash = (f, kennelId) => { if(kennelId==='own') return null;
   const mine = pieces({...f, kennel:kennelId}).filter(p => p.k===kennelId);
@@ -1563,7 +1577,7 @@ function whenSheet(u){
   const back = () => open({t:'stay', id:s.id});
   const err = isIn ? (s.status==='out' && stamp(f.d, f.t) >= stayEnd(s) ? 'Check-in has to be before checkout.' : '')
     : stamp(f.d, f.t) <= stayStart(s) ? 'Checkout has to be after check-in.' : '';
-  const save = () => { if(err) return; if(isIn){ s.inD = f.d; s.inT = f.t; } else { s.outD = f.d; s.outT = f.t; } back(); commit(); };
+  const save = () => { if(err) return; if(isIn){ s.inD = f.d; s.inT = f.t; s.inSet = true; } else { s.outD = f.d; s.outT = f.t; s.outSet = true; } back(); commit(); };
   return sheet(isIn ? 'Checked in' : 'Checked out', [
     h('div',{class:'row'},
       field('Day', fieldBtn(wmd(f.d), 'Day', ()=>pickDate(isIn ? 'Checked in' : 'Checked out', f.d, v=>{ f.d = v; }))),
@@ -1577,17 +1591,17 @@ function checkoutSheet(u){
   const s = S.stays.find(x=>x.id===u.id); if(!s) return null;
   // when they're leaving: now, unless she changes it. Leaving early frees the rest of the booked time.
   const f = u.f ||= {d:today(), t:nowHM()};
-  const at = {...s, status:'out', outD:f.d, outT:f.t};   // the stay as it'll be once checked out
+  const at = {...s, status:'out', outD:f.d, outT:f.t, outSet:!!f.set};   // the stay as it'll be once checked out
   const err = stamp(f.d, f.t) <= stayStart(s) ? 'Checkout has to be after check-in.' : '';
   const early = !err && stayEnd(at) < stamp(s.end, s.pick), late = !err && stayEnd(at) > stamp(s.end, s.pick);
-  const finish = paid => { if(err) return; s.status='out'; s.outD = f.d; s.outT = f.t; if(paid) s.paid=true; U.sh=null; commit(); };
+  const finish = paid => { if(err) return; s.status='out'; s.outD = f.d; s.outT = f.t; if(f.set) s.outSet = true; else delete s.outSet; if(paid) s.paid=true; U.sh=null; commit(); };
   const back = () => open({t:'stay', id:s.id});
   const R0 = S.rates || defaultRates();
   const dc = dayCount(at);
   return sheet('Check out '+petNames(s), [
     h('div',{class:'row'},
-      field('Leaving', fieldBtn(wmd(f.d), 'Day', ()=>pickDate('Leaving', f.d, v=>{ f.d = v; }))),
-      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.t), 'Time', ()=>pickTime('Leaving at', f.t, v=>f.t = v, {now:true})))),
+      field('Leaving', fieldBtn(wmd(f.d), 'Day', ()=>pickDate('Leaving', f.d, v=>{ f.d = v; f.set = true; }))),
+      h('div',{class:'f', style:'flex:0 0 130px'}, h('span',{class:'lbl'},' '), fieldBtn(t12(f.t), 'Time', ()=>pickTime('Leaving at', f.t, v=>{ f.t = v; f.set = true; }, {now:true})))),
     !err && h('p',{class:'mut', style:'margin-top:-4px'}, (early ? 'Early: booked until ' : late ? 'Late: booked until ' : 'Booked until ')+wmd(s.end)+', '+t12(s.pick)+'.'+(dc ? ' '+dc.long+'.' : '')),
     err && h('div',{class:'err'}, err),
     billCard(at, false),
@@ -2446,10 +2460,15 @@ function billFor(s){
   pets.forEach(p => { const sp = p.species==='cat' ? 'cat' : p.species==='other' ? 'other' : 'dog';
     lines.push({key:'pet:'+p.id, label:p.name, sub:plural(nights,'night')+' × '+money(R0[sp]), amt:nights*R0[sp]}); });
   if(pets.length > 1 && R0.share) lines.push({key:'share', label:'Sharing a kennel', sub:pets.length+' pets × '+plural(nights,'night')+' × '+money(-R0.share), amt:-pets.length*nights*R0.share});
-  if(B.fee && offHours(a.d, a.t)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(a.t), amt:B.fee});
-  if(B.fee && offHours(b.d, b.t)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(b.t), amt:B.fee});
+  // A tap on Check in / Check out can take a fee away but never add one: a fee from the real time counts only if
+  // the booked time had it too, or she set the time herself (s.inSet / s.outSet). Tapping a few minutes late adds nothing.
+  const fee = (test, real, booked, set) => test(real.d, real.t) && (set || test(booked.d, booked.t));
+  const bA = {d:s.start, t:s.arr}, bB = {d:s.end, t:s.pick}, outSet = s.status==='out' && s.outSet;
   // a late pickup: the kennel's used all day, like a late checkout (not on Sundays, when the hours are only evenings)
-  else if(B.eveFee && b.t >= (B.eveFrom || '16:00') && parseD(b.d).getDay()!==0) lines.push({key:'eve', label:'Late pickup', sub:t12(b.t), amt:B.eveFee});
+  const latePick = (d, t) => B.eveFee && t >= (B.eveFrom || '16:00') && parseD(d).getDay()!==0;
+  if(B.fee && fee(offHours, a, bA, s.status!=='booked' && s.inSet)) lines.push({key:'arrOff', label:'Drop-off outside hours', sub:t12(a.t), amt:B.fee});
+  if(B.fee && fee(offHours, b, bB, outSet)) lines.push({key:'pickOff', label:'Pickup outside hours', sub:t12(b.t), amt:B.fee});
+  else if(fee(latePick, b, bB, outSet)) lines.push({key:'eve', label:'Late pickup', sub:t12(b.t), amt:B.eveFee});
   lines.forEach(l => { l.auto = true; l.waived = waived.has(l.key); });
   (s.charges||[]).forEach(c => lines.push({id:c.id, label:c.label || (c.amt < 0 ? 'Discount' : 'Extra charge'), sub:c.qty > 1 ? c.qty+' × '+money(c.amt) : '', amt:c.amt*(c.qty||1)}));
   const sub = lines.reduce((t, l) => t + (l.waived ? 0 : l.amt), 0);
@@ -2925,7 +2944,7 @@ function formSheet(u){
       line('Personality', (p.personality || []).join(', ')), line('Good with', (p.along || []).join(', ')),
       line('Also know', p.alsoKnow), line('Notes', p.notes), line('Likes', p.likes), line('Dislikes', p.dislikes),
       line('Jumps fences', yesNoText(p.jumps)), line('Has bitten', yesNoText(p.bites)), line('Starts fights', yesNoText(p.fights)), line('Chews beds', yesNoText(p.chews)),
-      formDocs(p).length > 0 && h('div',{}, h('b',{}, 'Vet records '), formDocs(p).map((d, i) => { const src = docSrc({id:d.path, path:d.path});
+      formDocs(p).length > 0 && h('div',{}, h('b',{}, 'Vet records '), formDocs(p).map((d, i) => { const src = docSrc({id:d.path, path:d.path, data:d.data});
         return [i ? ' · ' : '', src.url ? h('a',{href:src.url, target:'_blank', rel:'noopener'}, d.name || 'Vet record')
           : h('span',{class:'mut'}, (d.name || 'Vet record')+(src.err ? ' (didn’t come through)' : ' (loading)'))]; })))]),
     h('div',{class:'sec'}, 'Waiver'),
@@ -2967,7 +2986,7 @@ function fileForm(g, famId){
     if((upd || !p.along.length) && fp.along?.length) p.along = fp.along.includes('Everyone') ? ['Everyone'] : [...fp.along];
     // vet records they sent go on the pet's records (not ones that never finished uploading)
     formDocs(fp).forEach(d => { if(docURLs[d.path]?.err || (p.docs || []).some(x => x.path===d.path)) return;
-      (p.docs ||= []).push({id:uid('d'), name:(d.name || 'Vet record').slice(0, 60), kind:d.kind==='pdf' ? 'pdf' : 'img', at:(g.created_at || '').slice(0, 10) || today(), path:d.path}); });
+      (p.docs ||= []).push({id:uid('d'), name:(d.name || 'Vet record').slice(0, 60), kind:d.kind==='pdf' ? 'pdf' : 'img', at:(g.created_at || '').slice(0, 10) || today(), path:d.path, ...(DEMO && d.data ? {data:d.data} : {})}); });
     const note = [fp.alsoKnow, fp.notes].map(x => (x || '').trim()).filter(Boolean).join('\n');
     if(note && !(p.notes || '').includes(note)) p.notes = p.notes ? p.notes+'\n'+note : note;
     // their meds join the pet's usual care, at any clock times they wrote (else as needed, until she sets them)
@@ -3663,7 +3682,10 @@ function demoForms(){
       pets:[{species:'dog', name:'Scout', breed:'Border collie', color:'Black & white', dob:addDays(today(), -365*4), sex:'f', fixed:'yes',
         conditions:'Sensitive stomach', meds:[{name:'Galliprant', dose:'60 mg', freq:'Once a day', instr:'With breakfast'}],
         diet:'Kibble morning and night', food:'Purina Pro Plan Sensitive, 1 cup', perDay:'2', treats:'yes', treatFav:'carrots',
-        personality:['Playful'], along:['Dogs','Humans'], notes:'Herds the other dogs.', jumps:'yes', bites:'no', fights:'no', likes:'Frisbees', dislikes:'Thunder', chews:'no'},
+        personality:['Playful'], along:['Dogs','Humans'], notes:'Herds the other dogs.', jumps:'yes', bites:'no', fights:'no', likes:'Frisbees', dislikes:'Thunder', chews:'no',
+        docs:[{name:'Vet record', kind:'img', path:'forms/00000000-0000-4000-8000-00000000d3e0/0-0.jpg', data:demoShotRecord('Scout', 'Border collie').data},
+              {name:'Scout rabies certificate', kind:'pdf', path:'forms/00000000-0000-4000-8000-00000000d3e0/0-1.pdf',
+               data:demoPdf('Rabies Vaccination Certificate (sample)', ['Maple Creek Vet Clinic, 555-0100', 'Patient: Scout, Border collie, female', 'Vaccine: Rabies, 3 year', 'Given: '+ymd(addDays(today(), -200))+'    Due: '+ymd(addDays(today(), 895)), 'Made-up demo record'])}]},
        {species:'cat', name:'Pickles', breed:'Domestic shorthair', color:'Grey tabby', sex:'m', fixed:'yes', meds:[], personality:['Shy at first'], along:[], treats:'no'}],
       sign:{name:'Jordan Price', date:today(), img:''}}}];
 }
