@@ -3326,7 +3326,7 @@ function demoRequests(){
     {id:uid('r'), created_at:at(3), status:'pending', start_date:addDays(today(), 9), end_date:addDays(today(), 14), arr:'08:30', pick:'16:30', dog_spots:1, cat_spots:0,
       name:'Sarah Whitfield', phone:'555-0101', email:'', pets:[{name:'Tucker', species:'dog', breed:'Corgi', group:'A'},{name:'Hazel', species:'dog', breed:'Golden mix', group:'A'}], share:true, notes:'Same as last time, thank you!',
       docs:[{pet:0, name:'Vet record', kind:'img', path:'requests/00000000-0000-4000-8000-0000000000a1/0-0.jpg', at:at(2), data:demoShotRecord('Tucker').data},
-            {pet:1, name:'Hazel shots', kind:'pdf', path:'requests/00000000-0000-4000-8000-0000000000a1/1-0.pdf', at:at(2),
+            {pet:1, name:'Vet record', kind:'pdf', path:'requests/00000000-0000-4000-8000-0000000000a1/1-0.pdf', at:at(2),
              data:demoPdf('Vaccination Record (sample)', ['Maple Creek Vet Clinic, 555-0100', 'Patient: Hazel, Golden mix', 'Rabies, DHPP, Bordetella: up to date', 'Made-up demo record'])}]},
     {id:uid('r'), created_at:at(20), status:'pending', start_date:addDays(today(), 4), end_date:addDays(today(), 7), arr:'12:00', pick:'17:00', dog_spots:1, cat_spots:1,
       name:'Priya Shah', phone:'555-0177', email:'priya@example.com', pets:[{name:'Mochi', species:'dog', breed:'Shiba Inu', group:'A'},{name:'Koji', species:'dog', breed:'Shiba Inu', group:'B'},{name:'Pepper', species:'cat', breed:'', group:'C'}], dog_spots:2, share:false, notes:'Mochi and Koji don’t get along, separate kennels please.'}];
@@ -3779,7 +3779,7 @@ function demoForms(){
         diet:'Kibble morning and night', food:'Purina Pro Plan Sensitive, 1 cup', perDay:'2', treats:'yes', treatFav:'carrots',
         personality:['Playful'], along:['Dogs','Humans'], notes:'Herds the other dogs.', jumps:'yes', bites:'no', fights:'no', likes:'Frisbees', dislikes:'Thunder', chews:'no',
         docs:[{name:'Vet record', kind:'img', path:'forms/00000000-0000-4000-8000-00000000d3e0/0-0.jpg', data:demoShotRecord('Scout', 'Border collie').data},
-              {name:'Scout rabies certificate', kind:'pdf', path:'forms/00000000-0000-4000-8000-00000000d3e0/0-1.pdf',
+              {name:'Vet record', kind:'pdf', path:'forms/00000000-0000-4000-8000-00000000d3e0/0-1.pdf',
                data:demoPdf('Rabies Vaccination Certificate (sample)', ['Maple Creek Vet Clinic, 555-0100', 'Patient: Scout, Border collie, female', 'Vaccine: Rabies, 3 year', 'Given: '+ymd(addDays(today(), -200))+'    Due: '+ymd(addDays(today(), 895)), 'Made-up demo record'])}]},
        {species:'cat', name:'Pickles', breed:'Domestic shorthair', color:'Grey tabby', sex:'m', fixed:'yes', meds:[], personality:['Shy at first'], along:[], treats:'no'}],
       sign:{name:'Jordan Price', date:today(), img:''}}}];
